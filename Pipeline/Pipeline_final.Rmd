@@ -1,5 +1,8 @@
 
 ```{r}
+here::i_am("Pipeline/Pipeline_final.Rmd")
+library(here)
+here()
 setting_file <- "E:/Yoann/M9_ParB/setting.yml"
 ```
 
@@ -44,13 +47,13 @@ phase_images <- NULL
 focis_images <- NULL
 diffuse_images <- NULL
 if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
-  phase_images <- fs::dir_ls(settings$Analysis_settings$Folders$Phase_folder, glob ="*.tif?", recurse = TRUE)
+  phase_images <- fs::dir_ls(settings$Analysis_settings$Folders$Phase_folder, glob ="*.tif*", recurse = TRUE)
 }
 if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
-  focis_images <- fs::dir_ls(settings$Analysis_settings$Folders$Foci_folder, glob ="*.tif?", recurse = TRUE)
+  focis_images <- fs::dir_ls(settings$Analysis_settings$Folders$Foci_folder, glob ="*.tif*", recurse = TRUE)
 }
 if (!is.null(settings$Analysis_settings$Folders$Diffuse_folder)) {
-  diffuse_images <- fs::dir_ls(settings$Analysis_settings$Folders$Diffuse_folder, glob ="*.tif?", recurse = TRUE)
+  diffuse_images <- fs::dir_ls(settings$Analysis_settings$Folders$Diffuse_folder, glob ="*.tif*", recurse = TRUE)
 }
 
 if (is.null(phase_images)) {
@@ -141,24 +144,24 @@ st_geometry(meshes) <- "mesh"
 
 img_paths <- unique((meshes |> arrange(phase_image_path))$phase_image_path)
 
-plan(multisession, workers = future::availableCores()-4)
+extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) -> phase_intensity
 
-
-furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
-    
-    print(glue::glue("Reading {fs::path_file(file)}..."))
-    img <- imager::load.image(file) 
-    image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
-      mutate(frame = as.integer(frame))
-    
-}) -> phase_intensity
+# plan(multisession, workers = future::availableCores()-4)
+# 
+# 
+# furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
+#     
+#     print(glue::glue("Reading {fs::path_file(file)}..."))
+#     img <- imager::load.image(file) 
+#     image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+#       mutate(frame = as.integer(frame))
+#     
+# }) -> phase_intensity
 
 rm(l_meshes)
 gc()
 
-running_means_difference <- function(x, span) {
-  runner::runner(x, k = span, mean, na_pad = F, lag = 0) - runner::runner(x, k = span, mean, na_pad = F, lag = -span+1)
-}
+
 
 phase_intensity |>
   group_by(id, frame)|>
@@ -220,89 +223,7 @@ focis_image_py <-glue::glue("['{paste(for_detection$focis_image_path, collapse =
 
 fs::dir_create(for_detection$foci_out_path |>fs::path_dir(), recurse = TRUE)
 
-macro <- glue::glue("
-import sys
-import csv
- 
-from ij import IJ
-from ij import WindowManager
- 
-from fiji.plugin.trackmate import TrackMate
-from fiji.plugin.trackmate import Model
-from fiji.plugin.trackmate import SelectionModel
-from fiji.plugin.trackmate import Settings
-from fiji.plugin.trackmate import Logger
-from fiji.plugin.trackmate.detection import LogDetectorFactory
-from fiji.plugin.trackmate.tracking import LAPUtils
-from fiji.plugin.trackmate.tracking import ManualTrackerFactory
-
-from java.lang import System
-
-reload(sys)
-sys.setdefaultencoding('utf-8')
-
-
-model = Model()
-model.setLogger(Logger.IJ_LOGGER)
-
-last_fieldnames = list()
-
-for file_to_analyse, out_file in zip({focis_image_py}, {focis_out_py}) :
-  imp = IJ.openImage(file_to_analyse)
-  print(file_to_analyse)
-  print(out_file)
-   
-  settings = Settings(imp)
-  
-  settings.detectorFactory = LogDetectorFactory()
-  settings.detectorSettings = {{
-      'DO_SUBPIXEL_LOCALIZATION' : {settings$Analysis_settings$Focis$Detection$Subpixel},
-      'RADIUS' : {format(settings$Analysis_settings$Focis$Detection$Radius, nsmall = 3)},
-      'TARGET_CHANNEL' : 1,
-      'THRESHOLD' : {settings$Analysis_settings$Focis$Detection$Initial_quality_threshold}.,
-      'DO_MEDIAN_FILTERING' : {settings$Analysis_settings$Focis$Detection$Median_filter},
-  }}
-   
-  settings.trackerFactory = ManualTrackerFactory()
-  settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
-  settings.trackerSettings['LINKING_MAX_DISTANCE'] = 10.0
-  settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = 10.0
-  settings.trackerSettings['MAX_FRAME_GAP'] = 3
-   
-  settings.addAllAnalyzers()
-  
-  trackmate = TrackMate(model, settings)
-   
-   
-  ok = trackmate.checkInput()
-  if not ok:
-      sys.exit(str(trackmate.getErrorMessage()))
-   
-  ok = trackmate.process()
-  if not ok:
-      sys.exit(str(trackmate.getErrorMessage()))
-   
-   
-  spots = [spot.getFeatures() for spot in model.getSpots().iterator(True)]
-
-  
-  fieldnames = last_fieldnames if len(spots) < 1 else list(spots[0].keys())
-
-  with open(out_file, 'w') as csv_file:
-  	j = csv.DictWriter(csv_file, fieldnames=fieldnames, lineterminator = '\\n')
-  	j.writeheader()
-  	j.writerows(spots)
-
-  last_fieldnames = fieldnames
-
-  imp.close()
-
-
-
-System.exit(0)  
-"
-)
-
+macro <- glue::glue(read_file(here("Pipeline", "TrackMate_batch_Jython_template.txt")))
     
 tmp_macro_file <- fs::file_temp(tmp_dir = fs::path(fs::path_dir(settings$Global_settings$fiji_path)) / "macros/", ext = "py")
 cat(macro, file = tmp_macro_file)
@@ -384,10 +305,20 @@ st_geometry(meshes) <- "mesh"
 
 img_paths <- unique((meshes |> arrange(phase_image_path))$diffuse_image_path)
 
-plan(multisession, workers = future::availableCores()-4)
-
+# plan(multisession, workers = future::availableCores()-4)
 # 
-# furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
+# # 
+# # furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
+# #     
+# #     print(glue::glue("Reading {fs::path_file(file)}..."))
+# #     img <- imager::load.image(file) 
+# #     image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+# #       mutate(frame = as.integer(frame))
+# #     
+# # }) -> fluo_intensity
+# 
+# 
+# map2_dfr(img_paths, l_meshes, \(file, mesh) {
 #     
 #     print(glue::glue("Reading {fs::path_file(file)}..."))
 #     img <- imager::load.image(file) 
@@ -397,17 +328,7 @@ plan(multisession, workers = future::availableCores()-4)
 # }) -> fluo_intensity
 
 
-map2_dfr(img_paths, l_meshes, \(file, mesh) {
-    
-    print(glue::glue("Reading {fs::path_file(file)}..."))
-    img <- imager::load.image(file) 
-    image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
-      mutate(frame = as.integer(frame))
-    
-}) -> fluo_intensity
-
-
-
+extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) -> fluo_intensity
 
 fluo_intensity |>
   group_by(id) |>
@@ -415,7 +336,6 @@ fluo_intensity |>
     threshold = predator_pix_fct(
       value[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
       coverage_fraction[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
-      #n = settings$Analysis_settings$Diffuse$Predator_pixels_threshold$k,
       n =  2)) |>
   ungroup() |>
   filter(value >= threshold) -> filtered_pixels
@@ -444,8 +364,6 @@ growing_cells <- filtered_pixels |>
       endbehavior = 1), ##span is the range the local maximum is searched (now: 12frames up/down = 
     has_peak = TRUE %in% is_local_peak) |> #if there is no peak, the cell is discarded
   dplyr::filter(has_peak) |>
-  #rowwise() |>
-  #mutate(is_local_peak = if_else(frame <=  settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame & is_local_peak, FALSE, is_local_peak)) |>
   dplyr::filter(n_pixels > 10) |>
   mutate(
     first_peak = min(frame[which(is_local_peak == TRUE & frame >= settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame)]),

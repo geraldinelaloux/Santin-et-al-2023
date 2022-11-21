@@ -1,0 +1,79 @@
+import sys
+import csv
+ 
+from ij import IJ
+from ij import WindowManager
+ 
+from fiji.plugin.trackmate import TrackMate
+from fiji.plugin.trackmate import Model
+from fiji.plugin.trackmate import SelectionModel
+from fiji.plugin.trackmate import Settings
+from fiji.plugin.trackmate import Logger
+from fiji.plugin.trackmate.detection import LogDetectorFactory
+from fiji.plugin.trackmate.tracking import LAPUtils
+from fiji.plugin.trackmate.tracking import ManualTrackerFactory
+
+from java.lang import System
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+
+model = Model()
+model.setLogger(Logger.IJ_LOGGER)
+
+last_fieldnames = list()
+
+for file_to_analyse, out_file in zip({focis_image_py}, {focis_out_py}) :
+  imp = IJ.openImage(file_to_analyse)
+  print(file_to_analyse)
+  print(out_file)
+   
+  settings = Settings(imp)
+  
+  settings.detectorFactory = LogDetectorFactory()
+  settings.detectorSettings = {{
+      'DO_SUBPIXEL_LOCALIZATION' : {settings$Analysis_settings$Focis$Detection$Subpixel},
+      'RADIUS' : {format(settings$Analysis_settings$Focis$Detection$Radius, nsmall = 3)},
+      'TARGET_CHANNEL' : 1,
+      'THRESHOLD' : {settings$Analysis_settings$Focis$Detection$Initial_quality_threshold}.,
+      'DO_MEDIAN_FILTERING' : {settings$Analysis_settings$Focis$Detection$Median_filter},
+  }}
+   
+  settings.trackerFactory = ManualTrackerFactory()
+  settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+  settings.trackerSettings['LINKING_MAX_DISTANCE'] = 10.0
+  settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = 10.0
+  settings.trackerSettings['MAX_FRAME_GAP'] = 3
+   
+  settings.addAllAnalyzers()
+  
+  trackmate = TrackMate(model, settings)
+   
+   
+  ok = trackmate.checkInput()
+  if not ok:
+      sys.exit(str(trackmate.getErrorMessage()))
+   
+  ok = trackmate.process()
+  if not ok:
+      sys.exit(str(trackmate.getErrorMessage()))
+   
+   
+  spots = [spot.getFeatures() for spot in model.getSpots().iterator(True)]
+
+  
+  fieldnames = last_fieldnames if len(spots) < 1 else list(spots[0].keys())
+
+  with open(out_file, 'w') as csv_file:
+  	j = csv.DictWriter(csv_file, fieldnames=fieldnames, lineterminator = '\\n')
+  	j.writeheader()
+  	j.writerows(spots)
+
+  last_fieldnames = fieldnames
+
+  imp.close()
+
+
+
+System.exit(0)  

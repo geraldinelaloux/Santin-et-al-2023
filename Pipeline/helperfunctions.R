@@ -1200,3 +1200,53 @@ points_in_mesh <- function(point, mesh) {
   NULL
 }
 
+
+
+furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
+  
+  print(glue::glue("Reading {fs::path_file(file)}..."))
+  img <- imager::load.image(file) 
+  image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+    mutate(frame = as.integer(frame))
+  
+}) -> phase_intensity
+
+
+extract_image_pixels_from_meshes <- function(images_paths, meshes, include_cols = NULL, parallel = TRUE) {
+  
+  if(length(images_paths) != length(meshes)){
+    stop("length(images_paths) must be equal to (==) length(meshes)")
+  }
+  
+
+  if(length(images_paths) == 1){
+    
+    print(glue::glue("Reading {fs::path_file(file)}..."))
+    image <- imager::load.image(images_paths) 
+    return(
+      image_pixels_in_mesh(image, meshes, include_cols = c("id")) |>
+        mutate(frame = as.integer(frame))
+    )
+  }
+  
+  if (is.numeric(parallel)) {
+    plan(multisession, workers = parallel)
+    map_function <- furrr::future_map2_dfr
+  }
+  else if (isTRUE(parallel)) {
+    plan(multisession, workers = future::availableCores()-2)
+    map_function <- furrr::future_map2_dfr
+  }
+  else {
+    map_function <- purrr::map2_dfr
+  }
+  
+  map_function(images_paths, meshes, \(x, y) {extract_image_pixels_from_meshes(x, y, include_cols, parallel = FALSE)})
+
+}
+
+
+running_means_difference <- function(x, span) {
+  runner::runner(x, k = span, mean, na_pad = F, lag = 0) - runner::runner(x, k = span, mean, na_pad = F, lag = -span+1)
+}
+
