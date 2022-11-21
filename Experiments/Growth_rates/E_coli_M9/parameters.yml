@@ -1,0 +1,54 @@
+---
+Global_settings:
+   bfconvert_path: "C:/Users/YSantin/Downloads/bftools/bfconvert"
+   fiji_path: "C:/Users/YSantin/Documents/Fiji.app/ImageJ-win64.exe"
+Analysis_settings:
+    Folders:
+        Analysis_folder: "E:/Yoann/M9_1462"
+        Phase_folder: "E:/Yoann/M9_1462/Phase"
+        Foci_folder: ~
+        Foci_detection_folder: ~
+        Meshes_folder:  "E:/Yoann/M9_1462/Meshes"
+        Diffuse_folder: "E:/Yoann/M9_1462/Diffuse"
+        Bad_replicate_name: "Bad"
+    Microscopy_info:
+        Pixel_to_um_ratio: 0.0740286
+        Frame_to_min_conversion: 8
+    Meshes:
+        Type: "Oufti" # Oufti | MicrobeJ | R (= combined Oufti files)
+        Buffer_um: 0.5
+    Popping_point_phase:
+        Running_means_span: 25
+        Peaks_finding_span: 25
+        Minimum_frame: 10
+        Save_intermediate_results : true
+    Focis:
+        Detection:
+            Subpixel: "True"
+            Radius: 1.75
+            Initial_quality_threshold: 15
+            Median_filter: "False"
+        Good_focis_thresholds:
+            Minimum_contrast: 0.030
+            Minimum_signal_to_noise_ratio: 0.50
+            Minimum_quality: 16
+    Diffuse:
+        Predator_pixels_threshold:
+            Type: "median_mad" # median_mad | mean_sd
+            k: 6
+            Frames_to_compute: [2, 3, 4, 5]
+        Growth:
+            End_of_growth_peaks_finding_span: 25
+            Central_size_threshold_type: "mean"
+            Start_size_threshold: 1 # Grow if : Start_size <= Central_size / Start_size_threshold
+            End_size_threshold: 1.95  # Grow if : End_size >= Start_size * End_size_threshold
+            Percentage_movie_growth_duration_threshold: 5
+            Bdellovibrio_minimum_area_threshold_um: 0.6
+            Growth_duration_under_min_area_threshold: 100 # Remove cells that spend over x% of their growth under Bdellovibrio_minimum_area_threshold_um
+            Min_first_peak_frame: 12
+        Curver:
+            Rmax_boundaries_threshold: 0.1
+            Pmin_boundaries_threshold: 0.01
+            Pmax_boundaries_threshold: 0.01
+            N_values_to_estimate_P_boundaries: 5
+            

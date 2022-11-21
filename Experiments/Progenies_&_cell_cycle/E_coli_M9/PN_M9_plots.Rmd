@@ -1,0 +1,775 @@
+
+# Load library
+```{r}
+library(tidyverse)
+library(sf)
+```
+
+
+# load Data
+```{r}
+analysis_folder <- "E:/Yoann/M9_ParB//" |> fs::path()
+
+
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside.rds")) {
+focis_inside <- readRDS(analysis_folder/"focis_inside.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside_counts.rds")) {
+focis_inside_count <- readRDS(analysis_folder/"focis_inside_counts.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+
+
+```
+
+
+```{r}
+meshes |> 
+  inner_join(popping_frames, by = "id") |>
+  inner_join(focis_inside_count, by = "id") |>
+  ungroup()  -> Progenies_segregation
+```
+
+
+```{r}
+Progenies_segregation |>
+  ggplot(aes(
+    y = popping_frame,
+    x = area,
+    color = condition, 
+    pch = replicate)) +
+  geom_point() + facet_wrap(~condition)
+```
+
+
+```{r}
+
+Progenies_segregation |> 
+  as_tibble() |>
+  group_by(id, condition) |>
+  filter(
+    frame > 1,
+    frame <= popping_frame
+    ) |>
+  summarise(
+    has_early_focis = any(frame %in% 2:3 & n >= 1),
+    perc_time_low_focis_number = sum(n %in% 0:1) / n(),
+    n = n()) |>
+  ggplot(aes(
+    x = has_early_focis,
+    y = perc_time_low_focis_number,
+  )) +
+  ggbeeswarm::geom_quasirandom(aes(color = condition))
+  
+```
+
+```{r}
+Progenies_segregation |> 
+  as_tibble() |>
+  group_by(id, condition) |>
+  filter(frame > 1) |>
+  filter(frame <= popping_frame) |>
+  mutate(
+    has_early_focis = any(frame %in% 2:3 & n >= 1),
+    perc_time_low_focis_number = sum(n %in% 0:1) / n()) |>
+  filter(
+    !has_early_focis,
+    perc_time_low_focis_number <= 0.9) |>
+  group_by(id, condition, area, popping_frame) |>
+  summarize(
+    max_focis  =  max(n),
+    area_focis = area/max_focis,
+    first_focis_frame = frame[row_number() == min(row_number()[n >= 1])],
+    last_max_focis_frame  =  as.integer(frame[row_number() == max(row_number()[n == max_focis])]),
+    first_max_focis_frame  =  as.integer(frame[row_number() == min(row_number()[n == max_focis])]),
+    max_focis_duration_frame = last_max_focis_frame - first_max_focis_frame,
+    max_focis_duration_min = max_focis_duration_frame * 8,
+    diff_last_max_focis_first_focis_frame   = last_max_focis_frame  - first_focis_frame,
+    diff_first_max_focis_first_focis_frame  = first_max_focis_frame - first_focis_frame,
+    diff_popping_time_first_max_focis_frame = popping_frame - first_max_focis_frame,
+    diff_popping_time_last_max_focis_frame  = popping_frame - last_max_focis_frame,
+    diff_last_max_focis_first_focis_min     = diff_last_max_focis_first_focis_frame   * 8, 
+    diff_first_max_focis_first_focis_min    = diff_first_max_focis_first_focis_frame  * 8, 
+    diff_popping_time_last_max_focis_min    = diff_popping_time_last_max_focis_frame  * 8,
+    diff_popping_time_first_max_focis_min   = diff_popping_time_first_max_focis_frame * 8
+    ) |> 
+  ungroup() |>
+  distinct() |>
+  mutate(
+    condition = fct_relevel(condition, c("WT", "Joe", "William", "Averell")),
+    bin_prey_area = santoku::chop_equally(area, 2)) -> Progenies_segregation_timings
+
+
+Progenies_segregation_timings |> write_csv(file = analysis_folder / "Progenies_segregation_timings.csv")
+```
+```{r}
+Progenies_segregation_timings |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  summarise(
+    n = n(),
+    across(
+      c(diff_last_max_focis_first_focis_min,
+        diff_first_max_focis_first_focis_min,
+        diff_popping_time_last_max_focis_min,diff_popping_time_first_max_focis_min,
+        area_focis,
+        max_focis,
+        popping_frame,
+        first_focis_frame,
+        last_max_focis_frame,
+        first_max_focis_frame,
+        max_focis_duration_min
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> Progenies_segregation_timings_all
+
+Progenies_segregation_timings_all |> write_csv(file = analysis_folder / "Progenies_segregation_timings_all.csv")
+
+Progenies_segregation_timings_all
+```
+
+```{r}
+Progenies_segregation_timings |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(diff_last_max_focis_first_focis_min,
+        diff_first_max_focis_first_focis_min,
+        diff_popping_time_last_max_focis_min,diff_popping_time_first_max_focis_min,
+        area_focis,
+        max_focis,
+        popping_frame,
+        first_focis_frame,
+        last_max_focis_frame,
+        first_max_focis_frame,
+        max_focis_duration_min
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> Progenies_segregation_timings_bin
+
+Progenies_segregation_timings_bin |> write_csv(file = analysis_folder / "Progenies_segregation_timings_bin.csv")
+
+Progenies_segregation_timings_bin
+```
+
+```{r}
+Progenies_segregation_timings |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(diff_last_max_focis_first_focis_min,
+        diff_first_max_focis_first_focis_min,
+        diff_popping_time_last_max_focis_min,diff_popping_time_first_max_focis_min,
+        area_focis,
+        max_focis,
+        popping_frame,
+        first_focis_frame,
+        last_max_focis_frame,
+        first_max_focis_frame,
+        max_focis_duration_min
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> Progenies_segregation_timings_condition
+
+Progenies_segregation_timings_condition |> write_csv(file = analysis_folder / "Progenies_segregation_timings_condition.csv")
+
+Progenies_segregation_timings_condition
+```
+
+```{r}
+Progenies_segregation_timings |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(max_focis) |>
+  summarise(
+    n = n(),
+    across(
+      c(diff_last_max_focis_first_focis_min,
+        diff_first_max_focis_first_focis_min,
+        diff_popping_time_last_max_focis_min,diff_popping_time_first_max_focis_min,
+        area_focis,
+        popping_frame,
+        first_focis_frame,
+        last_max_focis_frame,
+        first_max_focis_frame,
+        max_focis_duration_min,
+        area,
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> Progenies_segregation_timings_max_focis
+
+Progenies_segregation_timings |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(max_focis, condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(diff_last_max_focis_first_focis_min,
+        diff_first_max_focis_first_focis_min,
+        diff_popping_time_last_max_focis_min,diff_popping_time_first_max_focis_min,
+        area_focis,
+        popping_frame,
+        first_focis_frame,
+        last_max_focis_frame,
+        first_max_focis_frame,
+        max_focis_duration_min
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> Progenies_segregation_timings_max_focis_condition
+
+
+Progenies_segregation_timings |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(max_focis, bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(diff_last_max_focis_first_focis_min,
+        diff_first_max_focis_first_focis_min,
+        diff_popping_time_last_max_focis_min,diff_popping_time_first_max_focis_min,
+        area_focis,
+        popping_frame,
+        first_focis_frame,
+        last_max_focis_frame,
+        first_max_focis_frame,
+        max_focis_duration_min
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> Progenies_segregation_timings_max_focis_bin
+
+
+Progenies_segregation_timings_max_focis |> write_csv(file = analysis_folder / "Progenies_segregation_timings_max_focis.csv")
+
+Progenies_segregation_timings_max_focis
+```
+
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = popping_frame,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=1)
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = first_focis_frame,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=1)
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = last_max_focis_frame,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=1)
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = first_max_focis_frame,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=1)
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = last_max_focis_frame,
+    y = first_max_focis_frame,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=1) + xlim(0,120) + ylim(0,120)
+```
+
+
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = last_max_focis_frame,
+    y = first_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = area,
+      y = diff_last_max_focis_first_focis_min ,
+      color = condition)) +
+    geom_point() +
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = max_focis,
+      y = diff_last_max_focis_first_focis_min ,
+      color = condition)) +
+    ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=0.5) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_last_max_focis_first_focis_frame)) +
+  geom_density(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_last_max_focis_first_focis_frame)) +
+  geom_density(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_last_max_focis_first_focis_frame)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+```
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = first_max_focis_frame,
+    y = first_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = area,
+      y = diff_first_max_focis_first_focis_min ,
+      color = condition)) +
+    geom_point() +
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = max_focis,
+      y = diff_first_max_focis_first_focis_min ,
+      color = condition)) +
+    ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=0.5) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_first_max_focis_first_focis_frame)) +
+  geom_density(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_first_max_focis_first_focis_frame)) +
+  geom_density(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_first_max_focis_first_focis_frame)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+```
+
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = popping_frame,
+    y = last_max_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = popping_frame,
+    y = first_max_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = area,
+      y = diff_popping_time_first_max_focis_min ,
+      color = condition)) +
+    geom_point() +
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = area,
+      y = diff_popping_time_last_max_focis_min ,
+      color = condition)) +
+    geom_point() +
+  theme_classic() + theme(aspect.ratio=1) 
+
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = max_focis,
+      y = diff_popping_time_first_max_focis_min ,
+      color = condition)) +
+    ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=0.5) 
+
+Progenies_segregation_timings |>
+    ggplot(aes(
+      x = max_focis,
+      y = diff_popping_time_last_max_focis_min ,
+      color = condition)) +
+    ggbeeswarm::geom_quasirandom() +
+  theme_classic() + theme(aspect.ratio=0.5) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_popping_time_first_max_focis_frame)) +
+  geom_density(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_popping_time_last_max_focis_frame)) +
+  geom_density(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_popping_time_first_max_focis_frame)) +
+  geom_density(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_popping_time_last_max_focis_frame)) +
+  geom_density(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_popping_time_first_max_focis_frame)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = diff_popping_time_last_max_focis_frame)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+```
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+  x = max_focis,
+  y = area,
+  color = condition)) +
+  ggbeeswarm::geom_quasirandom() + 
+  theme_classic() + theme(aspect.ratio=0.5)
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+  x = area,
+  y = max_focis,
+  color = condition)) +
+  geom_point() + 
+  theme_classic() + theme(aspect.ratio=1)
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = area,
+    y = max_focis,
+    group = max_focis)) +
+  ggridges::geom_density_ridges_gradient() +
+  theme_classic() + theme(aspect.ratio=1)
+```
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = area_focis,
+    color = bin_prey_area,
+    group = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() + 
+  geom_pointrange(aes(
+    y = area_focis_median,
+    ymin = area_focis_median - area_focis_mad,
+    ymax = area_focis_median + area_focis_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = Progenies_segregation_timings_bin) + 
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    y = area_focis, 
+    x = condition)) +
+  ggbeeswarm::geom_quasirandom() + 
+  geom_pointrange(aes(
+    y = area_focis_median,
+    ymin = area_focis_median - area_focis_mad,
+    ymax = area_focis_median + area_focis_mad),
+    color = "black",
+    data = Progenies_segregation_timings_condition) + 
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = condition,
+    y = area_focis,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() + 
+  geom_pointrange(aes(
+    y = area_focis_median,
+    ymin = area_focis_median - area_focis_mad,
+    ymax = area_focis_median + area_focis_mad),
+    color = "black",
+    data = Progenies_segregation_timings_condition) + 
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = area_focis,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() + 
+  theme_classic() + theme(aspect.ratio=1) + 
+  geom_pointrange(aes(
+    y = area_focis_median,
+    ymin = area_focis_median - area_focis_mad,
+    ymax = area_focis_median + area_focis_mad),
+    color = "black",
+    data = Progenies_segregation_timings_max_focis) + 
+  theme_classic() + theme(aspect.ratio=1) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = area_focis,
+    color = area)) +
+  ggbeeswarm::geom_quasirandom() + 
+  theme_classic() + theme(aspect.ratio=1) + scale_color_viridis_c()
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = max_focis,
+    y = area_focis,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() + 
+  theme_classic() + theme(aspect.ratio=1)
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = area,
+    y = area_focis,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() + 
+  theme_classic() + theme(aspect.ratio=1) 
+```
+
+
+
+
+```{r}
+Progenies_segregation_timings_max_focis_condition |>
+  ggplot(aes(
+    x = condition,
+    y = max_focis,
+    size = n,
+    color = condition)) +
+  geom_point(alpha=0.5) +
+  scale_size(range = c(5, 20)) + 
+  theme_classic() + theme(aspect.ratio=1)
+
+Progenies_segregation_timings_max_focis_bin |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = max_focis,
+    size = n,
+    color = bin_prey_area)) +
+  geom_point(alpha=0.5) +
+  scale_size(range = c(5, 20)) + 
+  theme_classic() + theme(aspect.ratio=1)
+```
+
+
+```{r}
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = popping_frame,
+    y = last_max_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1)  + xlim(0,110) + ylim(0,110)
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = popping_frame,
+    y = first_max_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + xlim(0,110) + ylim(0,110) 
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = popping_frame,
+    y = last_max_focis_frame - first_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + xlim(0,110) + ylim(0,110)
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = popping_frame,
+    y = first_max_focis_frame - first_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + xlim(0,110) + ylim(0,110) 
+
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = area,
+    y = popping_frame - first_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + xlim(0,110) + ylim(0,110) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = area,
+    y = popping_frame - first_max_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + xlim(0,110) + ylim(0,110) 
+
+Progenies_segregation_timings |>
+  ggplot(aes(
+    x = area,
+    y = popping_frame - last_max_focis_frame)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + xlim(0,110) + ylim(0,110) 
+```
+
+```{r}
+Progenies_segregation_timings_max_focis |>
+  ggplot() +
+  geom_pointrange(aes(x = area_median,y = max_focis,  xmin = area_median - area_mad, xmax = area_median + area_mad)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+```
+
+
+
+```{r}
+Progenies_segregation |> 
+  as_tibble() |>
+  group_by(id, condition) |>
+  filter(frame > 1) |>
+  filter(frame <= popping_frame) |>
+  mutate(
+    has_early_focis = any(frame %in% 2:3 & n >= 1),
+    perc_time_low_focis_number = sum(n %in% 0:1) / n()) |>
+  filter(
+    !has_early_focis,
+    perc_time_low_focis_number <= 0.9) |>
+  group_by(id) |>
+  mutate(
+    cum_max = cummax(n),
+    ) |>
+  group_by(id, cum_max) |>
+  filter(row_number() == 1) |>
+  mutate(
+    time = frame*8,
+    log_bdello_foci = log(n)) |>
+  group_by(id) |>
+  filter(!is.infinite(log_bdello_foci)) |> 
+  nest(data = -c(id, area, condition)) |> 
+  mutate(
+    sgr_min = map_dbl(data, \(data) lm(log_bdello_foci ~ time, data = data)$coefficients[[2]]),
+    sgr_h = sgr_min*60) -> foci_rate
+
+
+foci_rate
+
+foci_rate |> ggplot(aes(x = area, y = sgr_h, color = condition)) + geom_point() + ylim(0,1)
+
+foci_rate |> ungroup() |> summarise(sgr_h_med = median(sgr_h), sgr_h_mad = mad(sgr_h))
+
+```
+```{r}
+Progenies_segregation_timings |> filter(popping_frame < 240/8) |> select(id) |> unique() -> early_pop
+Progenies_segregation_timings |> filter(area > 8) |> select(id) |> unique() -> high_area
+
+plot_pixel_intensities(meshes |> filter(id %in% early_pop$id), channel = "phase", type = "wrap")
+plot_pixel_intensities(meshes |> filter(id %in% high_area$id), channel = "diffuse", type = "wrap")
+
+```
+

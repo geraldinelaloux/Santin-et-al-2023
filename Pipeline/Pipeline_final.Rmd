@@ -1,0 +1,500 @@
+
+```{r}
+setting_file <- "E:/Yoann/M9_ParB/setting.yml"
+```
+
+
+# Load libraries and setting
+
+```{r}
+library(tidyverse)
+library(sf)
+library(terra)
+library(furrr)
+source("C:/Users/YSantin/Desktop/pipeline TL/extract_from.R", encoding = "UTF-8")
+source("C:/Users/YSantin/Desktop/pipeline TL/readers.r", encoding = "UTF-8")
+source("C:/Users/YSantin/Desktop/pipeline TL/helperfunctions.R", encoding = "UTF-8")
+
+
+settings <-  yaml::read_yaml(setting_file)
+
+meshes_glob <- switch (settings$Analysis_settings$Meshes$Type,
+  "Oufti" = "*.mat",
+  "MicrobeJ" = "*.csv",
+  "R" = "*.rds"
+)
+
+meshes_fct <- switch (settings$Analysis_settings$Meshes$Type,
+  "Oufti" = read_oufti,
+  "MicrobeJ" = read_microbeJ_mesh,
+  "R" = readRDS
+)
+
+predator_pix_fct <- switch (settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Type,
+  "median_mad" = median_mad_threshold,
+  "mean_sd" = mean_sd_threshold
+)
+
+central_size_fct <- switch (settings$Analysis_settings$Diffuse$Growth$Central_size_threshold_type,
+  "mean" = mean,
+  "median" = median)
+
+
+phase_images <- NULL
+focis_images <- NULL
+diffuse_images <- NULL
+if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
+  phase_images <- fs::dir_ls(settings$Analysis_settings$Folders$Phase_folder, glob ="*.tif?", recurse = TRUE)
+}
+if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
+  focis_images <- fs::dir_ls(settings$Analysis_settings$Folders$Foci_folder, glob ="*.tif?", recurse = TRUE)
+}
+if (!is.null(settings$Analysis_settings$Folders$Diffuse_folder)) {
+  diffuse_images <- fs::dir_ls(settings$Analysis_settings$Folders$Diffuse_folder, glob ="*.tif?", recurse = TRUE)
+}
+
+if (is.null(phase_images)) {
+  print("Warning: No phase images detected")
+  }
+if (length(phase_images) != length(focis_images) & !is.null(focis_images)) {
+  print("Warning: Number of images in phase and focis do not match")
+  print(setdiff(phase_images, focis_images))
+  }
+if (length(phase_images) != length(diffuse_images) & !is.null(diffuse_images)) {
+  print("Warning: Number of images in phase and diffuse do not match")
+  print(setdiff(phase_images, diffuse_images))
+}
+
+```
+
+
+
+
+# Mesh loading
+```{r}
+images_infos <- 
+  tibble(
+    phase_image_path = phase_images,
+    focis_image_path = if(is.null(focis_images)) {NA_character_} else{focis_images},
+    diffuse_image_path = if(is.null(diffuse_images)) {NA_character_} else{diffuse_images},
+    phase_image_name = phase_images |> fs::path_file(),
+    focis_image_name = if(is.null(focis_images)) {NA_character_} else{focis_images |> fs::path_file()},
+    diffuse_image_name = if(is.null(diffuse_images)) {NA_character_} else{diffuse_images |> fs::path_file()},
+    replicate = phase_images |> fs::path_dir() |> fs::path_file(),
+    condition = phase_images |> fs::path_dir() |> fs::path_dir() |> fs::path_file()) |>
+  arrange(phase_image_name) |>
+  rowwise() |>
+  mutate(
+    id = paste(condition, replicate, uuid::UUIDgenerate(), sep = "-")) |>
+  group_by(condition) |>
+  mutate(
+    image_id = row_number()) |>
+  filter(!(replicate %in% settings$Analysis_settings$Folders$Bad_replicate_name))
+
+mesh_files <- fs::dir_ls(settings$Analysis_settings$Folders$Meshes_folder, glob = meshes_glob) 
+
+buffer_pix <- compute_buffer_pix(settings$Analysis_settings$Meshes$Buffer_um, settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio)
+
+meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
+    mutate(condition = fs::path_file(filename) |> fs::path_ext_remove()) |>
+    mutate(image_id = frame) |>
+    select(-frame) |>
+    inner_join(images_infos, by = c("condition", "image_id")) |>
+    rowwise() |>
+    mutate(
+      mesh_pix = mesh,
+      mesh = mesh * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      max.length = max.length * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      max.width = max.width * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      box = box * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      area = st_area(mesh),
+      cent_x = st_centroid(mesh)[[1]][[1]],
+      cent_y = st_centroid(mesh)[[1]][[2]],
+      cell = as.character(cell),
+      radius = mean(st_distance(st_cast(mesh, "MULTIPOINT"), st_centroid(mesh))),
+      estimated_area = pi * radius^2,
+      estimated_volume = 4/3 * pi * radius^3,
+      id = paste(id, cell, sep = "-"),
+      config_file = fs::path_file(setting_file)
+    ) |>
+    group_by(phase_image_name) |>
+    mutate(mesh_buffered = st_make_valid(sf::st_buffer(mesh_pix, dist = buffer_pix, nQuadSegs = 5)))
+
+
+rm(mesh_files, images_infos)
+gc()
+
+```
+
+# Popping points computation phase
+
+```{r}
+if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
+
+st_geometry(meshes) <- "mesh_buffered"
+meshes |>
+  arrange(phase_image_path) |>
+  group_by(phase_image_path) |>
+  select(id, mesh_buffered, phase_image_path) |>
+  group_split() -> l_meshes
+st_geometry(meshes) <- "mesh"
+
+img_paths <- unique((meshes |> arrange(phase_image_path))$phase_image_path)
+
+plan(multisession, workers = future::availableCores()-4)
+
+
+furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
+    
+    print(glue::glue("Reading {fs::path_file(file)}..."))
+    img <- imager::load.image(file) 
+    image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+      mutate(frame = as.integer(frame))
+    
+}) -> phase_intensity
+
+rm(l_meshes)
+gc()
+
+running_means_difference <- function(x, span) {
+  runner::runner(x, k = span, mean, na_pad = F, lag = 0) - runner::runner(x, k = span, mean, na_pad = F, lag = -span+1)
+}
+
+phase_intensity |>
+  group_by(id, frame)|>
+  summarise(
+    wmean = weighted.mean(value, coverage_fraction, na.rm = TRUE),
+    contrast = weigthed_sd(value, coverage_fraction)) |> 
+  group_by(id) |>
+  arrange(frame) |>
+  mutate(
+    delta_mean_contrast = running_means_difference(
+      contrast,
+      span = settings$Analysis_settings$Popping_point_phase$Running_means_span),
+    is_local_peak = splus2R::peaks(
+      delta_mean_contrast,
+      span = settings$Analysis_settings$Popping_point_phase$Peaks_finding_span,
+      strict = FALSE,
+      endbehavior = 1),
+    has_peak = TRUE %in% is_local_peak) -> phase_intensity_summary 
+  
+rm(phase_intensity)
+gc()
+
+if (settings$Analysis_settings$Popping_point_phase$Save_intermediate_results) {
+  if (exists("phase_intensity_summary")) {
+    saveRDS(phase_intensity_summary, fs::path(settings$Analysis_settings$Folders$Analysis_folder) / "phase_intensity_summary.rds")
+  }
+}
+
+
+popping_frames <- phase_intensity_summary |>
+  dplyr::filter(has_peak) |>
+  mutate(popping_frame = min(which(is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame))) |> 
+  filter(frame == popping_frame) |>
+  select(id, popping_frame)
+
+
+  
+rm(phase_intensity_summary)
+gc()
+
+}
+```
+
+# Focis detection
+
+
+```{r}
+if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
+
+for_detection <- meshes |> 
+  as_tibble() |>
+  select(focis_image_path, focis_image_name, condition, replicate) |>
+  distinct() |>
+  mutate(foci_out_path = fs::path(settings$Analysis_settings$Folders$Foci_detection_folder) / condition / replicate / fs::path_ext_set(focis_image_name, ".csv"))
+
+collapser <- "', '"
+focis_out_py <- glue::glue("['{paste(for_detection$foci_out_path, collapse = collapser)}']")
+focis_image_py <-glue::glue("['{paste(for_detection$focis_image_path, collapse = collapser)}']")
+
+fs::dir_create(for_detection$foci_out_path |>fs::path_dir(), recurse = TRUE)
+
+macro <- glue::glue("
+import sys
+import csv
+ 
+from ij import IJ
+from ij import WindowManager
+ 
+from fiji.plugin.trackmate import TrackMate
+from fiji.plugin.trackmate import Model
+from fiji.plugin.trackmate import SelectionModel
+from fiji.plugin.trackmate import Settings
+from fiji.plugin.trackmate import Logger
+from fiji.plugin.trackmate.detection import LogDetectorFactory
+from fiji.plugin.trackmate.tracking import LAPUtils
+from fiji.plugin.trackmate.tracking import ManualTrackerFactory
+
+from java.lang import System
+
+reload(sys)
+sys.setdefaultencoding('utf-8')
+
+
+model = Model()
+model.setLogger(Logger.IJ_LOGGER)
+
+last_fieldnames = list()
+
+for file_to_analyse, out_file in zip({focis_image_py}, {focis_out_py}) :
+  imp = IJ.openImage(file_to_analyse)
+  print(file_to_analyse)
+  print(out_file)
+   
+  settings = Settings(imp)
+  
+  settings.detectorFactory = LogDetectorFactory()
+  settings.detectorSettings = {{
+      'DO_SUBPIXEL_LOCALIZATION' : {settings$Analysis_settings$Focis$Detection$Subpixel},
+      'RADIUS' : {format(settings$Analysis_settings$Focis$Detection$Radius, nsmall = 3)},
+      'TARGET_CHANNEL' : 1,
+      'THRESHOLD' : {settings$Analysis_settings$Focis$Detection$Initial_quality_threshold}.,
+      'DO_MEDIAN_FILTERING' : {settings$Analysis_settings$Focis$Detection$Median_filter},
+  }}
+   
+  settings.trackerFactory = ManualTrackerFactory()
+  settings.trackerSettings = LAPUtils.getDefaultLAPSettingsMap()
+  settings.trackerSettings['LINKING_MAX_DISTANCE'] = 10.0
+  settings.trackerSettings['GAP_CLOSING_MAX_DISTANCE'] = 10.0
+  settings.trackerSettings['MAX_FRAME_GAP'] = 3
+   
+  settings.addAllAnalyzers()
+  
+  trackmate = TrackMate(model, settings)
+   
+   
+  ok = trackmate.checkInput()
+  if not ok:
+      sys.exit(str(trackmate.getErrorMessage()))
+   
+  ok = trackmate.process()
+  if not ok:
+      sys.exit(str(trackmate.getErrorMessage()))
+   
+   
+  spots = [spot.getFeatures() for spot in model.getSpots().iterator(True)]
+
+  
+  fieldnames = last_fieldnames if len(spots) < 1 else list(spots[0].keys())
+
+  with open(out_file, 'w') as csv_file:
+  	j = csv.DictWriter(csv_file, fieldnames=fieldnames, lineterminator = '\\n')
+  	j.writeheader()
+  	j.writerows(spots)
+
+  last_fieldnames = fieldnames
+
+  imp.close()
+
+
+
+System.exit(0)  
+"
+)
+
+    
+tmp_macro_file <- fs::file_temp(tmp_dir = fs::path(fs::path_dir(settings$Global_settings$fiji_path)) / "macros/", ext = "py")
+cat(macro, file = tmp_macro_file)
+command <- glue::glue("{settings$Global_settings$fiji_path} --run {tmp_macro_file}")
+system(command, wait = TRUE, ignore.stdout = FALSE)
+    
+fs::file_delete(tmp_macro_file)
+
+gc()
+
+}
+```
+
+
+# Focis analysis
+
+```{r}
+if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
+
+
+detected_foci_files <- fs::dir_ls(settings$Analysis_settings$Folders$Foci_detection_folder, glob = "*.csv", recurse = TRUE)
+
+focis_all <- map_df(detected_foci_files, \(x) read_csv(x), .id = "focis_detected_filename") |>
+    janitor::clean_names() |>
+    mutate(
+      condition = fs::path_dir(focis_detected_filename) |> fs::path_dir() |> fs::path_file(),
+      replicate = fs::path_dir(focis_detected_filename) |> fs::path_file(),
+      focis_image_name = fs::path_file(focis_detected_filename) |> fs::path_ext_set("tif")
+      ) |>
+    filter(
+      contrast_ch1 >= settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_contrast,
+      snr_ch1 >= settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_signal_to_noise_ratio,
+      quality > settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_quality) 
+
+focis_all |>
+    group_by(condition ,replicate, focis_image_name) |>
+    group_split() |>
+    purrr::map(~sfheaders::sf_point(.x, x = "position_x", y ="position_y", keep =TRUE)) -> l_focis
+
+
+st_geometry(meshes) <- "mesh_buffered"
+
+meshes |>
+  select(condition ,replicate, focis_image_name, id, mesh_buffered) |>
+  group_by(condition, replicate, focis_image_name) |>
+  group_split() |>
+  purrr::map(~select(.x, mesh_buffered, id))-> l_mesh
+  
+st_geometry(meshes) <- "mesh"
+
+focis_inside <- purrr::map2_dfr(l_focis, l_mesh, ~points_in_mesh(.x,.y)) 
+
+focis_inside_count <- focis_inside |>
+  count(id, frame, .drop = FALSE) |>
+  complete(
+    nesting(id), frame,
+    fill = list(n = 0)) 
+
+rm(l_focis, l_mesh)
+gc()
+
+}
+```
+
+
+
+# Diffuse signal analysis
+
+```{r}
+if (!is.null(settings$Analysis_settings$Folders$Diffuse_folder)) {
+
+st_geometry(meshes) <- "mesh_buffered"
+meshes |>
+  arrange(phase_image_path) |>
+  group_by(diffuse_image_path) |>
+  select(id, mesh_buffered, diffuse_image_path) |>
+  group_split() -> l_meshes
+st_geometry(meshes) <- "mesh"
+
+img_paths <- unique((meshes |> arrange(phase_image_path))$diffuse_image_path)
+
+plan(multisession, workers = future::availableCores()-4)
+
+# 
+# furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
+#     
+#     print(glue::glue("Reading {fs::path_file(file)}..."))
+#     img <- imager::load.image(file) 
+#     image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+#       mutate(frame = as.integer(frame))
+#     
+# }) -> fluo_intensity
+
+
+map2_dfr(img_paths, l_meshes, \(file, mesh) {
+    
+    print(glue::glue("Reading {fs::path_file(file)}..."))
+    img <- imager::load.image(file) 
+    image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+      mutate(frame = as.integer(frame))
+    
+}) -> fluo_intensity
+
+
+
+
+fluo_intensity |>
+  group_by(id) |>
+  mutate(
+    threshold = predator_pix_fct(
+      value[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
+      coverage_fraction[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
+      #n = settings$Analysis_settings$Diffuse$Predator_pixels_threshold$k,
+      n =  2)) |>
+  ungroup() |>
+  filter(value >= threshold) -> filtered_pixels
+
+rm(fluo_intensity, l_meshes)
+gc()
+
+  
+growing_cells <- filtered_pixels |> 
+  dplyr::filter(frame > 1) |>
+  group_by(id, frame, threshold) |>
+  summarize(
+    n_pixels = sum(coverage_fraction)) |>
+  ungroup() |>
+  complete(
+    id, frame,
+    fill = list(n_pixels = 0)) |>
+  arrange(id, frame) |>
+  group_by(id) |>
+  fill(threshold, .direction = "updown") |>
+  mutate(
+    is_local_peak = splus2R::peaks(
+      n_pixels,
+      span =  settings$Analysis_settings$Diffuse$Growth$End_of_growth_peaks_finding_span,
+      strict = FALSE,
+      endbehavior = 1), ##span is the range the local maximum is searched (now: 12frames up/down = 
+    has_peak = TRUE %in% is_local_peak) |> #if there is no peak, the cell is discarded
+  dplyr::filter(has_peak) |>
+  #rowwise() |>
+  #mutate(is_local_peak = if_else(frame <=  settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame & is_local_peak, FALSE, is_local_peak)) |>
+  dplyr::filter(n_pixels > 10) |>
+  mutate(
+    first_peak = min(frame[which(is_local_peak == TRUE & frame >= settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame)]),
+    movie_duration = max(frame)) |>
+  dplyr::filter(!is.infinite(first_peak)) |>
+  dplyr::filter(frame <= first_peak) |>
+  mutate(
+    area_um2   = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
+    perc_movie_growth_duration = max(frame)/movie_duration *100,
+    growth_duration_frame = n(),
+    perc_growth_duration_under_min_area = length(area_um2[area_um2 < settings$Analysis_settings$Diffuse$Growth$Bdellovibrio_minimum_area_threshold_um])/growth_duration_frame * 100,
+    start_size   = first(area_um2),
+    central_size = central_size_fct(area_um2), # From RvR
+    end_size    = last(area_um2),
+    grows       = central_size >= settings$Analysis_settings$Diffuse$Growth$Start_size_threshold * start_size & end_size >= settings$Analysis_settings$Diffuse$Growth$End_size_threshold * start_size) |>
+  dplyr::filter(grows) |>
+  dplyr::filter(perc_movie_growth_duration >= settings$Analysis_settings$Diffuse$Growth$Percentage_movie_growth_duration_threshold) |>
+  dplyr::filter(perc_growth_duration_under_min_area <= settings$Analysis_settings$Diffuse$Growth$Growth_duration_under_min_area_threshold)
+
+
+rm(filtered_pixels)
+gc()
+
+}
+```
+
+
+```{r}
+
+if (exists("popping_frames")) {
+saveRDS(popping_frames,
+        fs::path(settings$Analysis_settings$Folders$Analysis_folder) / "popping_frames.rds")
+}
+if (exists("growing_cells")) {
+saveRDS(growing_cells,
+        fs::path(settings$Analysis_settings$Folders$Analysis_folder) / "growing_cells.rds")
+}
+if (exists("meshes")) {
+saveRDS(meshes,
+        fs::path(settings$Analysis_settings$Folders$Analysis_folder) / "meshes_ids.rds")
+}
+if (exists("focis_inside")) {
+saveRDS(focis_inside,
+        fs::path(settings$Analysis_settings$Folders$Analysis_folder) / "focis_inside.rds")
+}
+if (exists("focis_inside_count")) {
+saveRDS(focis_inside_count,
+        fs::path(settings$Analysis_settings$Folders$Analysis_folder) / "focis_inside_counts.rds")
+}
+
+```
+

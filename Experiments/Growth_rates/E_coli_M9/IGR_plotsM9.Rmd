@@ -1,0 +1,590 @@
+
+# Load library
+```{r}
+library(tidyverse)
+```
+
+
+
+
+```{r}
+analysis_folder <- "E:/Yoann/M9_1462/" |> fs::path()
+
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"growing_cells.rds")) {
+growing_cells <- readRDS(analysis_folder/"growing_cells.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+if (fs::file_exists(analysis_folder/"bad_high_sgr.rds")) {
+bad_high_sgr <- readRDS(analysis_folder / "bad_high_sgr.rds")}
+if (fs::file_exists(analysis_folder/"bad_early_pop.rds")) {
+bad_early_pop <- readRDS(analysis_folder / "bad_late_pop.rds")}
+if (fs::file_exists(analysis_folder/"bad_early_pop.rds")) {
+bad_late_pop <- readRDS(analysis_folder / "bad_late_pop.rds")}
+
+
+```
+
+```{r}
+meshes |> 
+  filter(!id %in% c(bad_high_sgr, bad_early_pop, bad_late_pop)) |>
+  inner_join(popping_frames, by = "id") |>
+  inner_join(growing_cells, by = "id") |>
+  as_tibble() -> IGR
+
+IGR |> 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  mutate(
+    bin_prey_area = santoku::chop_equally(area, 3)) |>
+  select(id, bin_prey_area) -> IGR_bins
+
+
+IGR |> 
+  inner_join(IGR_bins, by = "id") |> 
+  mutate(
+    time = frame * 8,
+    popping_time = popping_frame * 8,
+    log_bdello_area_um2 = log(area_um2),
+    difference_popping_point_end_of_growth_frame = popping_frame - first_peak,
+    difference_popping_point_end_of_growth_min   = difference_popping_point_end_of_growth_frame * 8,
+    condition = fct_relevel(condition, c("WT", "Joe", "William", "Averell"))) -> IGR
+    
+IGR |> select(-signal0) |> write_csv(file = analysis_folder / "IGR.csv")
+
+IGR |> 
+  group_by(id) |>
+  filter(!is.infinite(log_bdello_area_um2)) |> 
+  nest(data = -c(id, area, condition, bin_prey_area, first_peak, difference_popping_point_end_of_growth_min, start_size, end_size)) |> 
+  mutate(
+    sgr_min = map_dbl(data, \(data) lm(log_bdello_area_um2 ~ time, data = data)$coefficients[[2]]),
+    sgr_h = sgr_min*60) -> specific_growth_rate
+
+
+specific_growth_rate |> write_csv(file = analysis_folder / "specific_growth_rate.csv")
+
+
+specific_growth_rate |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  summarise(
+    n = n(),
+    across(
+      c(sgr_h
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> specific_growth_rate_all
+
+specific_growth_rate_all |> write_csv(file = analysis_folder / "specific_growth_rate_all.csv")
+
+
+specific_growth_rate |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(sgr_h
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> specific_growth_rate_condition
+
+specific_growth_rate_condition |> write_csv(file = analysis_folder / "specific_growth_rate_condition.csv")
+
+specific_growth_rate |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(sgr_h
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}")) -> specific_growth_rate_bin
+
+
+specific_growth_rate_bin |> write_csv(file = analysis_folder / "specific_growth_rate_bin.csv")
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        first_peak,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE) 
+      ),
+      .names = "{.col}_{.fn}")) -> IGR_all
+
+IGR_all |> write_csv(file = analysis_folder / "IGR_all.csv")
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        first_peak,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}"))  -> IGR_bin
+
+IGR_bin |> write_csv(file = analysis_folder / "IGR_bin.csv")
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  group_by(condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        first_peak,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+      ),
+      c(mean   = \(x) mean(x, na.rm = TRUE),
+        sd     = \(x) sd(x, na.rm = TRUE),
+        median = \(x) median(x, na.rm = TRUE),
+        mad    = \(x) mad(x, na.rm = TRUE),
+        CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE)
+      ),
+      .names = "{.col}_{.fn}"))  -> IGR_condition
+
+IGR_condition |> write_csv(file = analysis_folder / "IGR_condition.csv")
+```
+
+
+```{r}
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = popping_time/log(area),
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() + 
+  theme_classic() + theme(aspect.ratio=1) + ylim(0,700)
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ggplot(aes(
+    x = area,
+    y = popping_time/log(area),
+    color = condition)) +
+  geom_point() + 
+  theme_classic() + theme(aspect.ratio=1) + ylim(0,700)
+
+IGR |>
+  ggplot(aes(
+    x = area,
+    y = popping_time,
+    color = condition)) +
+  geom_point() + 
+  theme_classic() + theme(aspect.ratio=1) 
+
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ggplot(aes(
+    x = condition,
+    y = popping_time,
+    color = condition)) +
+ ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = popping_time_median ,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = condition),
+    color = "black",
+    data = IGR_condition)+ 
+  theme_classic() + theme(aspect.ratio=1) + ylim(0,700)
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = popping_time,
+    color = bin_prey_area)) +
+ ggbeeswarm::geom_quasirandom(aes(color = bin_prey_area)) +
+  geom_pointrange(aes(
+    y = popping_time_median,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = IGR_bin)+ 
+  theme_classic() + theme(aspect.ratio=1) + ylim(0,700)
+```
+```{r}
+IGR |>
+    ggplot(aes(
+      x = area,
+      y = first_peak*8)) +
+    geom_point(aes(color = condition)) +
+  theme_classic() + theme(aspect.ratio=1) 
+
+IGR |>
+  group_by(id) |>
+  slice_head(n = 1) |>
+    ggplot(aes(
+      x = bin_prey_area,
+      y = first_peak*8)) +
+    ggbeeswarm::geom_quasirandom(aes(color = bin_prey_area))+
+    geom_pointrange(aes(
+    y = first_peak_median* 8,
+    ymin = first_peak_median* 8 - first_peak_mad* 8,
+    ymax = first_peak_median* 8 + first_peak_mad* 8),
+    color = "black",
+    data = IGR_bin) +
+  theme_classic() + theme(aspect.ratio=1) 
+```
+
+
+
+```{r}
+specific_growth_rate |>
+  ggplot(aes(x = area, y = sgr_h*100)) + 
+    geom_point(aes(color = condition)) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+specific_growth_rate |>
+  ggplot(aes(x = first_peak, y = sgr_h*100)) + 
+    geom_point(aes(color = condition)) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+specific_growth_rate |>
+  ggplot(aes(x = start_size, y = sgr_h*100)) + 
+    geom_point(aes(color = condition)) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+specific_growth_rate |>
+  ggplot(aes(x = end_size, y = sgr_h*100)) + 
+    geom_point(aes(color = condition)) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+specific_growth_rate |>
+    ggplot(aes(x = difference_popping_point_end_of_growth_min, y = sgr_h*100)) + 
+    geom_point(aes(color = condition)) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+specific_growth_rate |>
+ggplot(aes(x = condition, y = sgr_h*100)) + 
+    ggbeeswarm::geom_quasirandom(aes(color = condition)) +
+  geom_pointrange(aes(
+    y = sgr_h_median * 100,
+    ymin = sgr_h_median* 100 - sgr_h_mad* 100,
+    ymax = sgr_h_median* 100 + sgr_h_mad* 100),
+    color = "black",
+    data = specific_growth_rate_condition) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+
+specific_growth_rate |>
+ggplot(aes(x = bin_prey_area, y = sgr_h*100)) + 
+    ggbeeswarm::geom_quasirandom(aes(color = bin_prey_area)) +
+    geom_pointrange(aes(
+    y = sgr_h_median* 100,
+    ymin = sgr_h_median* 100 - sgr_h_mad* 100,
+    ymax = sgr_h_median* 100 + sgr_h_mad* 100),
+    color = "black",
+    data = specific_growth_rate_bin) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+```
+```{r}
+
+IGR |>
+  ggplot(aes(y = area_um2, x = time)) +
+  geom_line(aes(color = bin_prey_area, group = id)) + 
+  facet_wrap(~bin_prey_area) + theme_classic() +  theme(aspect.ratio=1)
+
+IGR |>
+  ggplot(aes(y = area_um2, x = time)) +
+  geom_line(aes(color = condition, group = id)) + 
+  facet_wrap(~condition) + theme_classic() +  theme(aspect.ratio=1)
+
+IGR |>
+  ggplot(aes(y = log_bdello_area_um2, x = time)) +
+  geom_line(aes(color = bin_prey_area, group = id)) + 
+  facet_wrap(~bin_prey_area) + theme_classic() +  theme(aspect.ratio=1)
+
+IGR |>
+  ggplot(aes(y = log_bdello_area_um2, x = time)) +
+  geom_line(aes(color = condition, group = id)) + 
+  facet_wrap(~condition) + theme_classic() +  theme(aspect.ratio=1)
+  
+```
+
+```{r}
+IGR |>
+    ggplot(aes(
+      x = first_peak*8,
+      y = popping_time)) +
+    geom_point(aes(color = condition)) +
+  theme_classic() + theme(aspect.ratio=1) + ylim(0,750) + xlim(0,750)
+
+IGR |>
+    ggplot(aes(
+      x = first_peak*8,
+      y = popping_time)) +
+    geom_point(aes(color = bin_prey_area)) +
+  theme_classic() + theme(aspect.ratio=1) + ylim(0,750) + xlim(0,750)
+
+IGR |>
+    ggplot(aes(x = difference_popping_point_end_of_growth_frame)) +
+    geom_density(aes(color = bin_prey_area)) + theme_classic() + theme(aspect.ratio=1) + ylim(0, 0.7) + xlim(-200/8, 200/8) 
+
+IGR |>
+    ggplot(aes(x = difference_popping_point_end_of_growth_frame)) +
+    geom_density(aes(color = condition)) + theme_classic() + theme(aspect.ratio=1) + ylim(0, 0.7) + xlim(-200/8, 200/8) 
+```
+
+
+
+
+```{r}
+setting_file <- "E:/Yoann/IGR_all/parameters.yml" 
+
+
+settings <-  yaml::read_yaml(setting_file)
+
+get_raw_pix <- function(df, geometry = "mesh_buffered", channel = "phase") {
+channel_filename <- switch (channel,
+"phase" = "phase_image_path",
+"focis" = "focis_image_path",
+"diffuse" = "diffuse_image_path"
+)
+
+st_geometry(df) <- geometry
+df |>
+  group_by(id) |>
+  select(all_of(geometry), all_of(channel_filename), id) |> group_split() -> df_splitted
+  purrr::map_dfr(df_splitted, \(mesh){
+    
+    print(glue::glue("Reading {mesh[[channel_filename]]}"))
+    img <- imager::load.image(mesh[[channel_filename]])
+    image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+    mutate(frame = as.integer(frame))
+    }) -> intensity
+
+
+intensity |>
+  group_by(id) |>
+  mutate(
+    threshold = predator_pix_fct(
+      value[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
+      coverage_fraction[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
+      n = settings$Analysis_settings$Diffuse$Predator_pixels_threshold$k)) 
+}
+
+
+
+
+```
+```{r}
+plot_pixel_intensities <- function(df, geometry = "mesh_buffered", channel = "phase", type = "wrap", threshold = FALSE) {
+  channel_filename <- switch (channel,
+  "phase" = "phase_image_path",
+  "focis" = "focis_image_path",
+  "diffuse" = "diffuse_image_path"
+  )
+
+  st_geometry(df) <- geometry
+  
+  df |>
+    group_by(id) |>
+    select(all_of(geometry), all_of(channel_filename), id) |> group_split() -> df_splitted
+    purrr::map_dfr(df_splitted, \(mesh){
+      print(glue::glue("Loading {mesh[[channel_filename]]}"))
+      img <- imager::load.image(mesh[[channel_filename]])
+      image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
+      mutate(frame = as.numeric(frame))
+      }) -> intensity
+    
+  if(!isFALSE(threshold)){
+    intensity |> 
+      mutate(value = if_else(value >= threshold,0,1)) -> intensity
+  }
+  
+  int_tmp <<- intensity
+  
+  if (type == "movie_frame"){
+    intensity |>
+    group_by(id, frame) |>
+    group_split() |>
+    purrr::map(\(df) {
+      df |>  ggplot(aes(x = x, y = y, color = value, fill = value), width = 1, height = 1) +
+      geom_tile() +
+      scale_fill_gradient(low = "#000000", high = "#FFFFFF") +
+      scale_color_gradient(low = "#000000", high = "#FFFFFF") +
+      theme_classic() +
+      labs(title = df$id[[1]]) + 
+      coord_fixed()
+    })
+  }
+  
+
+  else if (type == "movie") {
+    intensity |>
+    group_by(id) |>
+    group_split() |>
+    purrr::map(\(df) {
+      df |>  ggplot(aes(x = x, y = y, color = value, fill = value), width = 1, height = 1) +
+      geom_tile() +
+      gganimate::transition_time(frame) +
+      scale_fill_gradient(low = "#000000", high = "#FFFFFF") +
+      scale_color_gradient(low = "#000000", high = "#FFFFFF") +
+      theme_classic() +
+      ggtitle(" {frame*8} / {nframes*8}") + 
+      coord_fixed()
+    })
+  }
+  
+  
+  else if (type == "wrap") {
+    intensity |>
+    group_by(id) |>
+    group_split() |>
+    purrr::map(\(df) {
+      df |>  ggplot(aes(x = x, y = y, color = value, fill = value), width = 1, height = 1) +
+      geom_tile() +
+     facet_wrap(~frame) +
+      scale_fill_gradient(low = "#000000", high = "#FFFFFF") +
+      scale_color_gradient(low = "#000000", high = "#FFFFFF") +
+      theme_classic() +
+      labs(title = df$id[[1]]) + 
+      coord_fixed()
+    })
+  }
+}
+
+
+IGR |> filter(popping_frame < 240/8) |> select(id) |> unique() -> early_pop
+IGR |> filter(popping_frame > 650/8) |> select(id) |> unique() -> late_pop
+early_pop$id  |> saveRDS(analysis_folder / "bad_early_pop.rds")
+late_pop$id |> tcltk::tk_select.list(multiple =  TRUE) -> bad_late_pop
+bad_late_pop |> saveRDS(analysis_folder / "bad_late_pop.rds")
+IGR |> filter(area > 8) |> select(id) |> unique() -> high_area
+
+plot_pixel_intensities(meshes |> filter(id %in% early_pop$id), channel = "phase", type = "wrap")
+plot_pixel_intensities(meshes |> filter(id %in% late_pop$id), channel = "phase", type = "wrap")
+plot_pixel_intensities(meshes |> filter(id %in% high_area$id), channel = "phase", type = "wrap")
+
+high_sgr$id |> tcltk::tk_select.list(multiple =  TRUE) -> bad_high_sgr
+bad_high_sgr |> saveRDS(analysis_folder / "bad_high_sgr.rds")
+
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "phase", type = "movie_frame")|> 
+  purrr::iwalk(\(plt, i){
+    img_dir <- glue::glue("C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/{channel}")
+    fs::dir_create(img_dir, recurse = TRUE)  
+    png(glue::glue("{img_dir}/{i}.png"), height =  1440, width = 2560, units = "px")
+    show(plt)
+    dev.off()
+    })
+
+
+channel <- "diffuse"
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[8]), channel = "diffuse", type = "movie_frame")|> 
+  purrr::iwalk(\(plt, i){
+    img_dir <- glue::glue("C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[8]}/{channel}")
+    fs::dir_create(img_dir, recurse = TRUE)  
+    png(glue::glue("{img_dir}/{i}.png"), height =  1440, width = 2560, units = "px")
+    show(plt)
+    dev.off()
+    })
+
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "diffuse", type = "movie_frame")|> 
+  purrr::iwalk(\(plt, i){
+    img_dir <- glue::glue("C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/{channel}")
+    fs::dir_create(img_dir, recurse = TRUE)  
+    png(glue::glue("{img_dir}/{i}.png"), height =  1440, width = 2560, units = "px")
+    show(plt)
+    dev.off()
+    })
+
+
+
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[8]), channel = "diffuse", type = "movie_frame", threshold =(IGR |> filter(id == QC_div_point$id[8]) |> select(threshold) |> unique())[[1]])|> 
+  purrr::iwalk(\(plt, i){
+    img_dir <- glue::glue("C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[8]}/bin")
+    fs::dir_create(img_dir, recurse = TRUE)  
+    png(glue::glue("{img_dir}/{i}.png"), height =  1440, width = 2560, units = "px")
+    show(plt)
+    dev.off()
+    })
+
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "diffuse", type = "movie_frame",  threshold = (IGR |> filter(id == QC_div_point$id[18]) |> select(threshold) |> unique())[[1]])|> 
+  purrr::iwalk(\(plt, i){
+    img_dir <- glue::glue("C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/bin")
+    fs::dir_create(img_dir, recurse = TRUE)  
+    png(glue::glue("{img_dir}/{i}.png"), height =  1440, width = 2560, units = "px")
+    show(plt)
+    dev.off()
+    })
+
+
+
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "diffuse", type = "movie", threshold =(IGR |> filter(id == QC_div_point$id[8]) |> select(threshold) |> unique())[[1]]) -> bin_gif
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "phase", type = "movie") -> phase_gif
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "diffuse", type = "movie") -> diffuse_gif
+
+#animate(bin_gif[[1]], fps = 5, renderer = gganimate::av_renderer(file = "C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/bin/all.mkv", dir = tempdir()))
+
+anim_save(filename =  "all.mkv", bin_gif[[1]], path = "C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/bin/")
+anim_save(filename =  "all.mkv", phase_gif[[1]], path = "C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/bin/")
+anim_save(filename =  "all.mkv", diffuse_gif[[1]], path = "C:/Users/distant/Desktop/YS/IGR/QC/{QC_div_point$id[18]}/bin/")
+
+plot_pixel_intensities(meshes |> filter(id == QC_div_point$id[18]), channel = "diffuse", type = "movie", threshold =(IGR |> filter(id == QC_div_point$id[18]) |> select(threshold) |> unique())[[1]])
+
+```
+
+
