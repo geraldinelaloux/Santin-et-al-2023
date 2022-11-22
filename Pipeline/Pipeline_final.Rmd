@@ -160,31 +160,6 @@ In phase contrast moviestime-lapses, there is a sharp decrease in contrast betwe
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
 
-# st_geometry(meshes) <- "mesh_buffered"
-# meshes |>
-#   arrange(phase_image_path) |>
-#   group_by(phase_image_path) |>
-#   select(id, mesh_buffered, phase_image_path) |>
-#   group_split() -> l_meshes
-# st_geometry(meshes) <- "mesh"
-  
-# img_paths <- unique((meshes |> arrange(phase_image_path))$phase_image_path)
-  
-# plan(multisession, workers = future::availableCores()-4)
-# 
-# 
-# furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
-#     
-#     print(glue::glue("Reading {fs::path_file(file)}..."))
-#     img <- imager::load.image(file) 
-#     image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
-#       mutate(frame = as.integer(frame))
-#     
-# }) -> phase_intensity
-
-
-  
-# should be equivalent
 l_meshes  <- get_mesh_list(meshes, mesh_buffered, id, phase_image_path)
 img_paths <- get_image_list(meshes, phase_image_path)
 
@@ -337,38 +312,6 @@ This chunk uses the cytosolic signal (tdTomato) in Bdellovibrio to quantify the 
 
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Diffuse_folder)) {
-
-# st_geometry(meshes) <- "mesh_buffered"
-# meshes |>
-#   arrange(phase_image_path) |>
-#   group_by(diffuse_image_path) |>
-#   select(id, mesh_buffered, diffuse_image_path) |>
-#   group_split() -> l_meshes
-# st_geometry(meshes) <- "mesh"
-# 
-# img_paths <- unique((meshes |> arrange(phase_image_path))$diffuse_image_path)
-
-# plan(multisession, workers = future::availableCores()-4)
-# 
-# # 
-# # furrr::future_map2_dfr(img_paths, l_meshes, \(file, mesh) {
-# #     
-# #     print(glue::glue("Reading {fs::path_file(file)}..."))
-# #     img <- imager::load.image(file) 
-# #     image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
-# #       mutate(frame = as.integer(frame))
-# #     
-# # }) -> fluo_intensity
-# 
-# 
-# map2_dfr(img_paths, l_meshes, \(file, mesh) {
-#     
-#     print(glue::glue("Reading {fs::path_file(file)}..."))
-#     img <- imager::load.image(file) 
-#     image_pixels_in_mesh(img, mesh, include_cols = c("id")) |>
-#       mutate(frame = as.integer(frame))
-#     
-# }) -> fluo_intensity
 
 l_meshes  <- get_mesh_list(meshes, mesh_buffered, id, diffuse_image_path)
 img_paths <- get_image_list(meshes, diffuse_image_path)
