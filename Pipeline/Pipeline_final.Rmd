@@ -1,3 +1,16 @@
+---
+author: "Thomas Lamot, Laloux lab"
+output: html_notebook
+title: "Pipeline for growth & cell cycle analysis of Bdellovibrio bacteriovorus"
+---
+
+# Dependencies
+
+This pipeline has the following dependencies: *yaml, here, furrr, runner, sf, tidyverse, terra, fs, glue, uuid, splus2R, janitor*.
+
+# Global settings: locate the parameter file.
+
+Change the path to *setting_file* to locate your 'setting.yml'.
 
 ```{r}
 here::i_am("Pipeline/Pipeline_final.Rmd")
@@ -8,6 +21,8 @@ setting_file <- "E:/Yoann/M9_ParB/setting.yml"
 
 
 # Load libraries and setting
+
+The following chunk loads the required libraries and locates the microscopy images.
 
 ```{r}
 library(tidyverse)
@@ -72,9 +87,10 @@ if (length(phase_images) != length(diffuse_images) & !is.null(diffuse_images)) {
 ```
 
 
-
-
 # Mesh loading
+
+The following chunk loads the input of the cell outlines derived from Oufti or MicrobeJ (referred to as 'meshes' in this pipeline), and computes the buffered outline & prey cell dimensions.
+
 ```{r}
 
 # Needed because when using oufti in batch mode, the output file only save the order of the analysed images
@@ -141,6 +157,8 @@ gc()
 ```
 
 # Popping points computation phase
+
+In phase contrast moviestime-lapses, there is a sharp decrease in contrast between the bdelloplast and its surroundings when Bdellovibrio divides. This was used as a proxy to determine the popping time. The contrast was computed as the weighted standard deviation of the phase contrast pixels within the buffered bdelloplast outline. Here each pixel was weighed by its coverage fraction within the bdelloplast outline. Finally, the maximum decrease in contrast is computed as the maximum difference of two successive running means of the contrast values. 
 
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
@@ -225,6 +243,7 @@ gc()
 
 # Focis detection
 
+Foci are detected by TrackMate, a standard plugin in the Fiji distribution of ImageJ. Make sure you have this installed: https://imagej.net/software/fiji/
 
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
@@ -237,7 +256,7 @@ for_detection <- meshes |>
 
 collapser <- "', '"
 focis_out_py <- glue::glue("['{paste(for_detection$foci_out_path, collapse = collapser)}']")
-focis_image_py <-glue::glue("['{paste(for_detection$focis_image_path, collapse = collapser)}']")
+focis_image_py <- glue::glue("['{paste(for_detection$focis_image_path, collapse = collapser)}']")
 
 fs::dir_create(for_detection$foci_out_path |>fs::path_dir(), recurse = TRUE)
 
@@ -257,6 +276,8 @@ gc()
 
 
 # Focis analysis
+
+This chunk counts the number of foci in each bdelloplast.
 
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
@@ -315,6 +336,8 @@ gc()
 
 
 # Diffuse signal analysis
+
+This chunk uses the cytosolic signal (tdTomato) in Bdellovibrio to quantify the growth of Bdellovibrio: the number of pixels inside each Bdellovibrio that are above the threshold (set as 6*MAD, see file 'parameters.yml') is used to calculate the Bdellovibrio area in um2. Non-growing Bdellovibrio are discarded.
 
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Diffuse_folder)) {
