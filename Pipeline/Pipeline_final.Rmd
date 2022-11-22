@@ -43,9 +43,10 @@ central_size_fct <- switch (settings$Analysis_settings$Diffuse$Growth$Central_si
   "median" = median)
 
 
-phase_images <- NULL
-focis_images <- NULL
+phase_images   <- NULL
+focis_images   <- NULL
 diffuse_images <- NULL
+
 if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
   phase_images <- fs::dir_ls(settings$Analysis_settings$Folders$Phase_folder, glob ="*.tif*", recurse = TRUE)
 }
@@ -75,7 +76,11 @@ if (length(phase_images) != length(diffuse_images) & !is.null(diffuse_images)) {
 
 # Mesh loading
 ```{r}
+
+# Needed because when using oufti in batch mode, the output file only save the order of the analysed images
 images_infos <- 
+  # Correspondence between the splitted phase, diffuse and foci images & info on which condition and replicate they belong 
+  # Condition folder name should be the same as the corresponding oufti result file
   tibble(
     phase_image_path   = phase_images,
     phase_image_name   = phase_images |> fs::path_file(),
@@ -88,20 +93,26 @@ images_infos <-
   arrange(phase_image_name) |>
   rowwise() |>
   mutate(
+    # Alphabetical order of the images -> should be the same of the analysed images in oufti
     id = paste(condition, replicate, uuid::UUIDgenerate(), sep = "-")) |>
   group_by(condition) |>
   mutate(
     image_id = row_number()) |>
+  # Discard image analysed present in the oufti result file, avoid redoing the analysis while preserving the order
   filter(!(replicate %in% settings$Analysis_settings$Folders$Bad_replicate_name))
 
+# oufti result files
 mesh_files <- fs::dir_ls(settings$Analysis_settings$Folders$Meshes_folder, glob = meshes_glob) 
 
 buffer_pix <- compute_buffer_pix(settings$Analysis_settings$Meshes$Buffer_um, settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio)
 
 meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
+    select(-c("algorithm", "birthframe", "polarity", "ancestors", "descendants", "stage", "timelapse", "divisions", "box")) |>
     mutate(condition = fs::path_file(filename) |> fs::path_ext_remove()) |>
-    mutate(image_id = frame) |>
-    select(-frame) |>
+    st_sf() |>
+    rename(image_id = frame) |>
+    # mutate(image_id = frame) |>
+    # select(-frame) |>
     inner_join(images_infos, by = c("condition", "image_id")) |>
     rowwise() |>
     mutate(
@@ -134,18 +145,16 @@ gc()
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
 
-st_geometry(meshes) <- "mesh_buffered"
-meshes |>
-  arrange(phase_image_path) |>
-  group_by(phase_image_path) |>
-  select(id, mesh_buffered, phase_image_path) |>
-  group_split() -> l_meshes
-st_geometry(meshes) <- "mesh"
-
-img_paths <- unique((meshes |> arrange(phase_image_path))$phase_image_path)
-
-extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) -> phase_intensity
-
+# st_geometry(meshes) <- "mesh_buffered"
+# meshes |>
+#   arrange(phase_image_path) |>
+#   group_by(phase_image_path) |>
+#   select(id, mesh_buffered, phase_image_path) |>
+#   group_split() -> l_meshes
+# st_geometry(meshes) <- "mesh"
+  
+# img_paths <- unique((meshes |> arrange(phase_image_path))$phase_image_path)
+  
 # plan(multisession, workers = future::availableCores()-4)
 # 
 # 
@@ -158,10 +167,16 @@ extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), pa
 #     
 # }) -> phase_intensity
 
+
+  
+# should be equivalent
+l_meshes  <- get_mesh_list(meshes, mesh_buffered, id, phase_image_path)
+img_paths <- get_image_list(meshes, phase_image_path)
+
+phase_intensity <- extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) 
+
 rm(l_meshes)
 gc()
-
-
 
 phase_intensity |>
   group_by(id, frame)|>
@@ -252,14 +267,14 @@ detected_foci_files <- fs::dir_ls(settings$Analysis_settings$Folders$Foci_detect
 focis_all <- map_df(detected_foci_files, \(x) read_csv(x), .id = "focis_detected_filename") |>
     janitor::clean_names() |>
     mutate(
-      condition = fs::path_dir(focis_detected_filename) |> fs::path_dir() |> fs::path_file(),
-      replicate = fs::path_dir(focis_detected_filename) |> fs::path_file(),
+      # condition = fs::path_dir(focis_detected_filename) |> fs::path_dir() |> fs::path_file(),
+      # replicate = fs::path_dir(focis_detected_filename) |> fs::path_file(),
       focis_image_name = fs::path_file(focis_detected_filename) |> fs::path_ext_set("tif")
       ) |>
     filter(
       contrast_ch1 >= settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_contrast,
-      snr_ch1 >= settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_signal_to_noise_ratio,
-      quality > settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_quality) 
+      snr_ch1      >= settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_signal_to_noise_ratio,
+      quality      >  settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_quality) 
 
 focis_all |>
     group_by(condition ,replicate, focis_image_name) |>
@@ -270,8 +285,14 @@ focis_all |>
 st_geometry(meshes) <- "mesh_buffered"
 
 meshes |>
-  select(condition ,replicate, focis_image_name, id, mesh_buffered) |>
-  group_by(condition, replicate, focis_image_name) |>
+  select(
+    # condition,
+    # replicate,
+    focis_image_name, id, mesh_buffered) |>
+  group_by(
+    # condition,
+    # replicate,
+    focis_image_name) |>
   group_split() |>
   purrr::map(~select(.x, mesh_buffered, id))-> l_mesh
   
@@ -298,15 +319,15 @@ gc()
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Diffuse_folder)) {
 
-st_geometry(meshes) <- "mesh_buffered"
-meshes |>
-  arrange(phase_image_path) |>
-  group_by(diffuse_image_path) |>
-  select(id, mesh_buffered, diffuse_image_path) |>
-  group_split() -> l_meshes
-st_geometry(meshes) <- "mesh"
-
-img_paths <- unique((meshes |> arrange(phase_image_path))$diffuse_image_path)
+# st_geometry(meshes) <- "mesh_buffered"
+# meshes |>
+#   arrange(phase_image_path) |>
+#   group_by(diffuse_image_path) |>
+#   select(id, mesh_buffered, diffuse_image_path) |>
+#   group_split() -> l_meshes
+# st_geometry(meshes) <- "mesh"
+# 
+# img_paths <- unique((meshes |> arrange(phase_image_path))$diffuse_image_path)
 
 # plan(multisession, workers = future::availableCores()-4)
 # 
@@ -330,6 +351,8 @@ img_paths <- unique((meshes |> arrange(phase_image_path))$diffuse_image_path)
 #     
 # }) -> fluo_intensity
 
+l_meshes  <- get_mesh_list(meshes, mesh_buffered, id, diffuse_image_path)
+img_paths <- get_image_list(meshes, diffuse_image_path)
 
 extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) -> fluo_intensity
 
