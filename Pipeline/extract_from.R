@@ -1,3 +1,20 @@
+#############################################################
+#Thomas Lamot, 2022
+
+#Part of extract functions are derived from BactMAP (github.com/vrrenske/bactmap), van Raaphorst et al 2020
+
+#############################################################
+
+#Dependencies: janitor, tidyverse, purrr, sf
+
+#Tidyverse packages & sf package need to be loaded before running these functions:
+library(tidyverse)
+library(sf)
+
+#############################################################
+
+#functions:
+
 unnest_cell_meshes <- function(celllist, mesh) {
   celllist |>
     rowwise() |>
