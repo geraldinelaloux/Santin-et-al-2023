@@ -85,70 +85,6 @@ extract_oufti_celllist <- function(oufti_list) {
 }
 
 
-
-extract_morphometrics <- function(morphometrics_list) {
- morphometrics_list |> 
-  as_tibble() |>
-  mutate(across(where(\(x) length(dim(x)) == 2 && dim(x)[2] == 1), \(x) c(x))) -> temp
-purrr::map(temp$frame, \(x) as_tibble(t(data.frame(x)))) -> temp
-
-temp[[2]] |>
-  rowwise() |> 
-  mutate(
-    across(c(Xcent, Ycent, area, theta, bw.label, cellID, circularity, pole1, pole2, num.pts, Xcent.cont, Ycent.cont,theta.cont), \(x) c(x)),
-    mesh_cont = list(st_polygon_autoclose(Xcont, Ycont)),
-    mesh_perim = list(st_polygon_autoclose(Xperim, Yperim))) |> 
-  select(-c(Xcont, Ycont, Xperim, Yperim)) |>
-  st_sf() -> cell_list
-
-  return(cell_list)
-}
-
-
-extract_supersegger_celllist <- function(supersegger_list) {
-  lookup <- c("cell_id", "cell_birth_time", "cell_death_time", "cell_age", "fluor1_sum", "fluor1_mean", "fluor1_sum_death", "fluor1_mean_death", "fluor2_sum", "fluor2_mean", "fluor2_sum_death", "fluor2_mean_death", "mother_id", "daughter1_id", "daughter2_id")
-  names(lookup) <- c("cell", "birth", "death", "edgelength", "fluorsum", "fluormean", "fluorsum_D", "fluormean_D", "fluorsum2", "fluormean2", "fluorsum_D2", "fluormean_D2", "parent", "child1", "child2")
-  
-  as_tibble(supersegger_list$data) -> cell_list
-  colnames(cell_list) <- janitor::make_clean_names(unlist(supersegger_list$def))
-  cell_list |>
-    select(any_of(lookup)) |>
-    rename(any_of(lookup)) |>
-    mutate(
-      parent = if_else(is.na(parent), 0, parent)
-    ) -> cell_list
-  
-}
-
-# segger_files |> 
-#   purrr::map(\(x) extract_supersegger_mesh(R.matlab::readMat(x))) |> 
-#   bind_rows() -> all_cells
-
-extract_supersegger_mesh <- function(suppersegger_list) {
-  suppersegger_list$CellA[[1]][[1]][,,1] -> temp
-  mesh <- terra::rast(temp$mask) |> 
-    terra::flip(direction="horizontal") |>
-    as.polygons() |>
-    terra::shift(dx = temp$r.offset[,1], dy = temp$r.offset[,2]) |>
-    st_as_sf() |>
-    rename(value = lyr.1) |>
-    filter(value > 0)
-  return(mesh)
-}
-
-
-
-
-
-# extract_mesh <- function(cell_list) {
-#   cell_list |>
-#     unnest_cell_meshes(mesh, cell, frame) |>
-#     get_cell_max_length_and_width(x0, x1, y0, y1, c(cell, frame)) |>
-#     pivot_xy_longer(c(x0, y0, x1, y1), num, n) |>
-#   return(meshes)
-# }
-
-
 get_cell_max_length_and_width <- function(meshlist, x0, y0, x1, y1, .group) {
   meshlist |>
     group_by(across({{.group}})) |>
@@ -185,61 +121,6 @@ get_cell_max_length_and_width <- function(meshlist, x0, y0, x1, y1, .group) {
       select(-c(xdist, ydist, xdistL0, ydistL0, distL0, angL0, angd, anglength, steplength, length)) -> meshlist
   return(meshlist)
 }
-
-
-# add_mesh_pixel_to_unit_conversion <- function(meshlist, pixel_to_unit_ratio, unit) {
-#   meshlist |>
-#     mutate(
-#       max_length_unit = max.length * pixel_to_unit_ratio,
-#       max_width_unit = max.width * pixel_to_unit_ratio,
-#       x_rotated_unit = x_rotated * pixel_to_unit_ratio,
-#       y_rotated_unit = y_rotated * pixel_to_unit_ratio,
-#       ratio = pixel_to_unit_ratio,
-#       unit = unit) -> meshlist
-#     return(meshlist)
-# }
-
-polygonize_and_get_centroids <- function(meshlist, x, y, .group) {
-  meshlist |>
-    group_by(across({{.group}}))  |>
-    summarise(
-      cell_polygon = list(st_polygon_autoclose(x = {{x}}, y = {{y}})),
-      bounding_box_angle_centroid = list(get_minimum_bounding_box_centroid_and_angle({{x}}, {{y}}))) |>
-    rowwise() |>
-    mutate(
-      bounding_box_centroid = list(bounding_box_angle_centroid[["centroid"]]),
-      bounding_box_angle = (180 - bounding_box_angle_centroid[["angle"]]) * pi / 180,
-      angle = if_else(is_polygon_rotation_y_positive(cell_polygon, bounding_box_angle, bounding_box_centroid), bounding_box_angle + pi, bounding_box_angle),
-      cell_centroid = list(sf::st_centroid(cell_polygon)),
-      area = sf::st_area(cell_polygon)) |>
-    select(-c(bounding_box_angle_centroid)) -> meshlist
-  return(meshlist)
-}
-
-polygonize_and_get_centroids <- function(meshlist, x, y, .group) {
-  meshlist |>
-    group_by(across({{.group}}))  |>
-    summarise(
-      cell_polygon = list(st_polygon_autoclose(x = {{x}}, y = {{y}})),
-      bounding_box_angle_centroid = list(get_minimum_bounding_box_centroid_and_angle({{x}}, {{y}}))) |>
-    rowwise() |>
-    mutate(
-      bounding_box_centroid = list(bounding_box_angle_centroid[["centroid"]]),
-      bounding_box_angle = (180 - bounding_box_angle_centroid[["angle"]]) * pi / 180,
-      angle = if_else(is_polygon_rotation_y_positive(cell_polygon, bounding_box_angle, bounding_box_centroid), bounding_box_angle + pi, bounding_box_angle),
-      cell_centroid = list(sf::st_centroid(cell_polygon)),
-      area = sf::st_area(cell_polygon)) |>
-    select(-c(bounding_box_angle_centroid)) -> meshlist
-  return(meshlist)
-}
-
-# stack_meshes <- function(cell_list, mesh, angle, around, offset) {
-#   cell_list |> 
-#     rowwise() |>
-#     mutate({{meshes}} := center_and_orient_mesh({{meshes}}, {{angles}}, {{around}}, {{offset}})) -> cell_list
-#   return(cell_list)
-# }
-
 
 
 center_and_rotate_meshes <- function(meshlist, x, y, .group) {
@@ -279,26 +160,6 @@ pivot_xy_longer <- function(celllist, .xy_cols, num, n) {
     return(celllist)
 }
 
-compute_signal_mean_and_sd <- function(celllist) {
-  celllist |>
-    rowwise() |>
-    mutate(
-      across(starts_with("signal"), \(x) if_else(is.numeric(x), list(x), list(NA)), .names = "{.col}")) |>
-    mutate(
-      across(starts_with("signal"), \(x) mean(x, na.rm = TRUE), .names = "mean.{.col}"),
-      across(starts_with("signal"), \(x) sd(x, na.rm = TRUE), .names = "sd.{.col}")) -> celllist
-
-  return(celllist)
-  }
-
-
-trim_orphan <- function(datasegger) {
-  datasegger |>
-    rowwise() |>
-    filter(any(parent != 0, !is.na(child1), !is.na(child2))) -> datasegger
-
-  return(datasegger)
-}
 
 
 
@@ -311,7 +172,6 @@ extract_microbeJ_mesh <- function(microbeJ_df) {
   st_sf() -> mesh
   return(mesh)
 }
-
 
 extract_microbeJ_cell <- function(microbeJ_df) {
   lookup <- c(
@@ -337,3 +197,70 @@ extract_microbeJ_cell <- function(microbeJ_df) {
 
     return(cell_list)
 }
+
+
+#################################################################################
+
+#Functions related to other segmentation programs than oufti or microbej, untested:
+
+
+extract_morphometrics <- function(morphometrics_list) {
+  morphometrics_list |> 
+    as_tibble() |>
+    mutate(across(where(\(x) length(dim(x)) == 2 && dim(x)[2] == 1), \(x) c(x))) -> temp
+  purrr::map(temp$frame, \(x) as_tibble(t(data.frame(x)))) -> temp
+  
+  temp[[2]] |>
+    rowwise() |> 
+    mutate(
+      across(c(Xcent, Ycent, area, theta, bw.label, cellID, circularity, pole1, pole2, num.pts, Xcent.cont, Ycent.cont,theta.cont), \(x) c(x)),
+      mesh_cont = list(st_polygon_autoclose(Xcont, Ycont)),
+      mesh_perim = list(st_polygon_autoclose(Xperim, Yperim))) |> 
+    select(-c(Xcont, Ycont, Xperim, Yperim)) |>
+    st_sf() -> cell_list
+  
+  return(cell_list)
+}
+
+
+extract_supersegger_celllist <- function(supersegger_list) {
+  lookup <- c("cell_id", "cell_birth_time", "cell_death_time", "cell_age", "fluor1_sum", "fluor1_mean", "fluor1_sum_death", "fluor1_mean_death", "fluor2_sum", "fluor2_mean", "fluor2_sum_death", "fluor2_mean_death", "mother_id", "daughter1_id", "daughter2_id")
+  names(lookup) <- c("cell", "birth", "death", "edgelength", "fluorsum", "fluormean", "fluorsum_D", "fluormean_D", "fluorsum2", "fluormean2", "fluorsum_D2", "fluormean_D2", "parent", "child1", "child2")
+  
+  as_tibble(supersegger_list$data) -> cell_list
+  colnames(cell_list) <- janitor::make_clean_names(unlist(supersegger_list$def))
+  cell_list |>
+    select(any_of(lookup)) |>
+    rename(any_of(lookup)) |>
+    mutate(
+      parent = if_else(is.na(parent), 0, parent)
+    ) -> cell_list
+  
+}
+
+# segger_files |> 
+#   purrr::map(\(x) extract_supersegger_mesh(R.matlab::readMat(x))) |> 
+#   bind_rows() -> all_cells
+
+extract_supersegger_mesh <- function(suppersegger_list) {
+  suppersegger_list$CellA[[1]][[1]][,,1] -> temp
+  mesh <- terra::rast(temp$mask) |> 
+    terra::flip(direction="horizontal") |>
+    as.polygons() |>
+    terra::shift(dx = temp$r.offset[,1], dy = temp$r.offset[,2]) |>
+    st_as_sf() |>
+    rename(value = lyr.1) |>
+    filter(value > 0)
+  return(mesh)
+}
+
+
+trim_orphan <- function(datasegger) {
+  datasegger |>
+    rowwise() |>
+    filter(any(parent != 0, !is.na(child1), !is.na(child2))) -> datasegger
+  
+  return(datasegger)
+}
+
+
