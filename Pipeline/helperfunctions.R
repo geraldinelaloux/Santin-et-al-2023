@@ -1258,4 +1258,25 @@ find_min <- function(vector, for_which) {min(vector[which(for_which)])}
 find_max <- function(vector, for_which) {max(vector[which(for_which)])}
 
 
-min(id[which(bool)])
+
+get_mesh_list <- function(meshes, mesh_col, mesh_id_col, split_by){
+   active_geometry <- st_geometry(meshes)
+   st_geometry(meshes) <- deparse(substitute(mesh_id_col))
+   
+   meshes |>
+   select(all_of(mesh_col, mesh_id_col, split_by)) |>
+   arrange(split_by) |>
+   group_by(split_by) |>
+   group_split() -> l_meshes
+   
+   st_geometry(meshes) <- active_geometry
+   return(l_meshes)
+   
+  
+}
+
+get_image_list <- function(meshes, image_path_col) {
+  (meshes |> arrange(image_path_col))[[deparse(substitute(image_path_col))]] |> unique()
+}
+
+
