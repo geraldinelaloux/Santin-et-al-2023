@@ -780,7 +780,7 @@ st_rotate_around <- function(geometry, theta, around = sf::st_point(c(0, 0))) {
 }
 
 
-
+# I think there is a new sf function for bounding box 
 get_minimum_bounding_box_centroid_and_angle <- function(x, y) {
   bounding_box <- shotGroups::getMinBBox(data.frame(point.x = x, point.y = y))
   points <- as.matrix(bounding_box$pts)
@@ -1250,3 +1250,12 @@ running_means_difference <- function(x, span) {
   runner::runner(x, k = span, mean, na_pad = F, lag = 0) - runner::runner(x, k = span, mean, na_pad = F, lag = -span+1)
 }
 
+
+circle_area <- function(radius) { pi * radius^2}
+sphere_volume <-  function(radius) {4/3 * pi * radius^3}
+
+find_min <- function(vector, for_which) {min(vector[which(for_which)])}
+find_max <- function(vector, for_which) {max(vector[which(for_which)])}
+
+
+min(id[which(bool)])

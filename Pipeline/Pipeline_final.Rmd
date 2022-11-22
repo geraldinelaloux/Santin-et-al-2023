@@ -77,12 +77,12 @@ if (length(phase_images) != length(diffuse_images) & !is.null(diffuse_images)) {
 ```{r}
 images_infos <- 
   tibble(
-    phase_image_path = phase_images,
-    focis_image_path = if(is.null(focis_images)) {NA_character_} else{focis_images},
-    diffuse_image_path = if(is.null(diffuse_images)) {NA_character_} else{diffuse_images},
-    phase_image_name = phase_images |> fs::path_file(),
-    focis_image_name = if(is.null(focis_images)) {NA_character_} else{focis_images |> fs::path_file()},
-    diffuse_image_name = if(is.null(diffuse_images)) {NA_character_} else{diffuse_images |> fs::path_file()},
+    phase_image_path   = phase_images,
+    phase_image_name   = phase_images |> fs::path_file(),
+    focis_image_path   = if(is.null(focis_images))   {NA_character_} else {focis_images},
+    focis_image_name   = if(is.null(focis_images))   {NA_character_} else {focis_images   |> fs::path_file()},
+    diffuse_image_path = if(is.null(diffuse_images)) {NA_character_} else {diffuse_images},
+    diffuse_image_name = if(is.null(diffuse_images)) {NA_character_} else {diffuse_images |> fs::path_file()},
     replicate = phase_images |> fs::path_dir() |> fs::path_file(),
     condition = phase_images |> fs::path_dir() |> fs::path_dir() |> fs::path_file()) |>
   arrange(phase_image_name) |>
@@ -106,17 +106,17 @@ meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
     rowwise() |>
     mutate(
       mesh_pix = mesh,
-      mesh = mesh * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      mesh     = mesh * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
       max.length = max.length * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      max.width = max.width * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      box = box * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      area = st_area(mesh),
+      max.width  = max.width  * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      # box    = box * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      area   = st_area(mesh),
       cent_x = st_centroid(mesh)[[1]][[1]],
       cent_y = st_centroid(mesh)[[1]][[2]],
-      cell = as.character(cell),
+      cell   = as.character(cell),
       radius = mean(st_distance(st_cast(mesh, "MULTIPOINT"), st_centroid(mesh))),
-      estimated_area = pi * radius^2,
-      estimated_volume = 4/3 * pi * radius^3,
+      estimated_area   = circle_area(radius),
+      estimated_volume = sphere_volume(radius),
       id = paste(id, cell, sep = "-"),
       config_file = fs::path_file(setting_file)
     ) |>
@@ -166,7 +166,7 @@ gc()
 phase_intensity |>
   group_by(id, frame)|>
   summarise(
-    wmean = weighted.mean(value, coverage_fraction, na.rm = TRUE),
+    wmean    = weighted.mean(value, coverage_fraction, na.rm = TRUE),
     contrast = weigthed_sd(value, coverage_fraction)) |> 
   group_by(id) |>
   arrange(frame) |>
@@ -193,7 +193,10 @@ if (settings$Analysis_settings$Popping_point_phase$Save_intermediate_results) {
 
 popping_frames <- phase_intensity_summary |>
   dplyr::filter(has_peak) |>
-  mutate(popping_frame = min(which(is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame))) |> 
+  mutate(
+    # popping_frame = find_min(frame, for_which =is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame), # to try
+    popping_frame = min(which(is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame)) # frame[which] is missing but here frame should be 1:last_frame so should be equivalent
+    ) |> 
   filter(frame == popping_frame) |>
   select(id, popping_frame)
 
@@ -243,7 +246,7 @@ gc()
 ```{r}
 if (!is.null(settings$Analysis_settings$Folders$Foci_folder)) {
 
-
+# replicates and conditions not necessary since we have the ids
 detected_foci_files <- fs::dir_ls(settings$Analysis_settings$Folders$Foci_detection_folder, glob = "*.csv", recurse = TRUE)
 
 focis_all <- map_df(detected_foci_files, \(x) read_csv(x), .id = "focis_detected_filename") |>
@@ -336,7 +339,7 @@ fluo_intensity |>
     threshold = predator_pix_fct(
       value[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
       coverage_fraction[frame %in% settings$Analysis_settings$Diffuse$Predator_pixels_threshold$Frames_to_compute],
-      n =  2)) |>
+      n =  settings$Analysis_settings$Diffuse$Predator_pixels_threshold$k)) |>
   ungroup() |>
   filter(value >= threshold) -> filtered_pixels
 
@@ -367,18 +370,19 @@ growing_cells <- filtered_pixels |>
   dplyr::filter(n_pixels > 10) |>
   mutate(
     first_peak = min(frame[which(is_local_peak == TRUE & frame >= settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame)]),
+    # first_peak = find_min(frame, for_which = is_local_peak == TRUE & frame >= settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame), # to try
     movie_duration = max(frame)) |>
   dplyr::filter(!is.infinite(first_peak)) |>
   dplyr::filter(frame <= first_peak) |>
   mutate(
-    area_um2   = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
+    area_um2    = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
     perc_movie_growth_duration = max(frame)/movie_duration *100,
     growth_duration_frame = n(),
     perc_growth_duration_under_min_area = length(area_um2[area_um2 < settings$Analysis_settings$Diffuse$Growth$Bdellovibrio_minimum_area_threshold_um])/growth_duration_frame * 100,
     start_size   = first(area_um2),
     central_size = central_size_fct(area_um2), # From RvR
-    end_size    = last(area_um2),
-    grows       = central_size >= settings$Analysis_settings$Diffuse$Growth$Start_size_threshold * start_size & end_size >= settings$Analysis_settings$Diffuse$Growth$End_size_threshold * start_size) |>
+    end_size     = last(area_um2),
+    grows        = central_size >= settings$Analysis_settings$Diffuse$Growth$Start_size_threshold * start_size & end_size >= settings$Analysis_settings$Diffuse$Growth$End_size_threshold * start_size) |>
   dplyr::filter(grows) |>
   dplyr::filter(perc_movie_growth_duration >= settings$Analysis_settings$Diffuse$Growth$Percentage_movie_growth_duration_threshold) |>
   dplyr::filter(perc_growth_duration_under_min_area <= settings$Analysis_settings$Diffuse$Growth$Growth_duration_under_min_area_threshold)
