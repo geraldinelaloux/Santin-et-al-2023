@@ -127,8 +127,6 @@ meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
     mutate(condition = fs::path_file(filename) |> fs::path_ext_remove()) |>
     st_sf() |>
     rename(image_id = frame) |>
-    # mutate(image_id = frame) |>
-    # select(-frame) |>
     inner_join(images_infos, by = c("condition", "image_id")) |>
     rowwise() |>
     mutate(
@@ -136,7 +134,6 @@ meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
       mesh     = mesh * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
       max.length = max.length * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
       max.width  = max.width  * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      # box    = box * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
       area   = st_area(mesh),
       cent_x = st_centroid(mesh)[[1]][[1]],
       cent_y = st_centroid(mesh)[[1]][[2]],
@@ -227,8 +224,7 @@ if (settings$Analysis_settings$Popping_point_phase$Save_intermediate_results) {
 popping_frames <- phase_intensity_summary |>
   dplyr::filter(has_peak) |>
   mutate(
-    # popping_frame = find_min(frame, for_which =is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame), # to try
-    popping_frame = min(which(is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame)) # frame[which] is missing but here frame should be 1:last_frame so should be equivalent
+     popping_frame = find_min(frame, for_which = is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame)
     ) |> 
   filter(frame == popping_frame) |>
   select(id, popping_frame)

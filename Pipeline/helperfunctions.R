@@ -66,20 +66,20 @@ points_in_mesh <- function(point, mesh) {
 
 
 extract_image_pixels_from_meshes <- function(images_paths, meshes, include_cols = NULL, parallel = TRUE) {
-  
-  if(length(images_paths) != length(meshes)){
-    stop("length(images_paths) must be equal to (==) length(meshes)")
-  }
-  
 
   if(length(images_paths) == 1){
     
-    print(glue::glue("Reading {fs::path_file(file)}..."))
+    print(glue::glue("Reading {fs::path_file(images_paths)}..."))
+    
     image <- imager::load.image(images_paths) 
     return(
       image_pixels_in_mesh(image, meshes, include_cols = c("id")) |>
         mutate(frame = as.integer(frame))
     )
+  }
+  
+  if(length(images_paths) != length(meshes)){
+    stop("length(images_paths) must be equal to (==) length(meshes)")
   }
   
   if (is.numeric(parallel)) {
@@ -112,13 +112,20 @@ find_max <- function(vector, for_which) {max(vector[which(for_which)])}
 
 
 get_mesh_list <- function(meshes, mesh_col, mesh_id_col, split_by){
-   active_geometry <- st_geometry(meshes)
+   active_geometry <- attr(meshes, "sf_column")
    st_geometry(meshes) <- deparse(substitute(mesh_id_col))
    
+vars <- c(
+  deparse(substitute(mesh_col)),
+  deparse(substitute(mesh_id_col)),
+  deparse(substitute(split_by)))
+   
    meshes |>
-   select(all_of(mesh_col, mesh_id_col, split_by)) |>
-   arrange(split_by) |>
-   group_by(split_by) |>
+   as_tibble() |>
+   select(all_of(vars)) |>
+   st_sf() |>
+   arrange({{split_by}}) |>
+   group_by({{split_by}}) |>
    group_split() -> l_meshes
    
    st_geometry(meshes) <- active_geometry
@@ -128,7 +135,7 @@ get_mesh_list <- function(meshes, mesh_col, mesh_id_col, split_by){
 }
 
 get_image_list <- function(meshes, image_path_col) {
-  (meshes |> arrange(image_path_col))[[deparse(substitute(image_path_col))]] |> unique()
+  meshes[[deparse(substitute(image_path_col))]] |> unique() |> sort()
 }
 
 
