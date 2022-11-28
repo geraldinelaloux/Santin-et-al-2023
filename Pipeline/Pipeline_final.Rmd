@@ -29,9 +29,11 @@ library(tidyverse)
 library(sf)
 library(terra)
 library(furrr)
-source("C:/Users/YSantin/Desktop/pipeline TL/extract_from.R", encoding = "UTF-8")
-source("C:/Users/YSantin/Desktop/pipeline TL/readers.r", encoding = "UTF-8")
-source("C:/Users/YSantin/Desktop/pipeline TL/helperfunctions.R", encoding = "UTF-8")
+
+
+source(here("Pipeline", "extract_from.R"), encoding = "UTF-8")
+source(here("Pipeline", "readers.R"), encoding = "UTF-8")
+source(here("Pipeline", "helperfunctions.R"), encoding = "UTF-8")
 
 
 settings <-  yaml::read_yaml(setting_file)

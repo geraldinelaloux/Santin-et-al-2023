@@ -63,6 +63,84 @@ points_in_mesh <- function(point, mesh) {
 }
 
 
+st_polygon_autoclose <- function(x, y) {
+  if (first(x) != last(x) || first(y) != last(y)) {
+    x <- append(x, first(x))
+    y <- append(y, first(y))
+  }
+  return(sf::st_polygon(list(cbind(x = x, y = y))))
+}
+ 
+angle_from_horizontal <- function(..., type = "rad") {
+  result <- switch(type,
+                   "rad" = pi,
+                   "deg" = 180,
+                   "hour" = 12
+  )
+  angles <- c(...)
+  for (theta in angles) {
+    result <- result - theta
+  }
+  return(result)
+}
+
+angle_from_vertical <- function(..., type = "rad") {
+  result <- switch(type,
+                   "rad" = pi / 2,
+                   "deg" = 90,
+                   "hour" = 6
+  )
+  angles <- c(...)
+  for (theta in angles) {
+    result <- result - theta
+  }
+  return(result)
+}
+
+polar_distance <- function(x, y) {
+  return(sqrt(x^2 + y^2))
+}
+
+polar_angle <- function(x, y) {
+  return(atan(x / y))
+}
+
+st_box <- function(left, right, top, bot, center, width, height, angle = 0) {
+  if (!missing(center)) {
+    if (!missing(width) & !missing(height)) {
+      left <- center[1] - width/2
+      right <- center[1] +  width/2
+      bot <- center[2] - height/2
+      top <- center[2] + height/2
+    }
+    else if (!missing(left) & !missing(right)) {
+      right <- center[1] + (center-left)/2
+      top <- center[2] + (center-bot)/2
+    }
+    else {
+      stop("you need to provide 'width' and 'height' OR 'left' and 'bot' arguments when using 'center' argument")
+    }
+  }
+  else {
+    
+    if (!xor(missing(top) | missing(right), missing(width) | missing(height))) {
+      stop("you need to provide 'width' and 'height' OR 'top' arguments when using 'left' and bot argument")
+    }
+    if (missing(top) | missing(right)) {
+      right <- left +  width/2
+      top <- bot +  height/2
+    }
+  }
+  
+  points <- matrix(c(right, top, left, top, left, bot, right, bot, right, top), ncol = 2, byrow = TRUE)
+  ox <- (right + left)/2
+  oy <- (top + bot)/2
+  points <- matrix(c(
+    cos(-angle) * (points[,1] - ox)  - sin(-angle) * (points[,2] - oy) + ox,
+    sin(-angle) * (points[,1] - ox)  + cos(-angle) * (points[,2] - oy) + oy), ncol = 2)
+  box <- st_polygon(list(points))
+  return(box)
+}
 
 
 extract_image_pixels_from_meshes <- function(images_paths, meshes, include_cols = NULL, parallel = TRUE) {

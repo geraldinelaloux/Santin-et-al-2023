@@ -4,9 +4,9 @@
 
 ## The functions below depend on the following functions in extract_from.R: extract_oufti_celllist(), extract_microbeJ_mesh() & extract_microbeJ_cell()
 
-##Dependencies: R.matlab, tidyverse
+## Dependencies: R.matlab, tidyverse
 
-##Oufti
+## Oufti
 
 read_oufti <- function(oufti_matfile) {
   oufti_matfile |>
