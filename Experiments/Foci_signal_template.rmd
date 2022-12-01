@@ -1,0 +1,80 @@
+# Downstream analysis & plotting of ParB *B. bacteriovorus* with *E. coli* prey grown in LB
+
+## Library loading
+
+```{r}
+library(tidyverse)
+library(sf)
+```
+
+## Data loading
+
+Load .rds data from the prey size analysis pipeline & also load .rds data containing info on cell to discard after manual checking of outliers cells.
+
+```{r}
+
+```
+
+## Data merging
+
+Merge data from the outline file (id, bdelloplast outline, condition, replicate, bdelloplast area) with popping point data (id, popping frame/time), diffuse signal (id, bdellovibrio area, frame/time, end of growth) & discard the "bad" cells
+
+```{r}
+
+```
+
+## Data cleaning
+
+```{r}
+
+```
+
+## Downstream analysis (can be moved to the pipeline)
+
+```{r}
+
+```
+
+## Descriptive statistics (Summarized data)
+
+Compute the descriptive statistics (mean, SD, CV, median, mad, rCV) of the data across everything, condition, bins of the prey area, number of foci
+
+-   Data \|\> group() \|\> summarize() -\> *uniform way of naming with data name and group* (for plotting the statistics)
+
+-   *uniform way of naming with data name and group \|\>* pivot_longer() -\> show & save (for easier reading)
+
+```{r}
+
+```
+
+## Data plotting
+
+### Popping point
+
+```{r}
+
+```
+
+### Number of offspring
+
+```{r}
+
+```
+
+### Number of offspring/area
+
+```{r}
+
+```
+
+### Segregation timing (1^st^ ParB foci - last ParB foci)
+
+```{r}
+
+```
+
+### Popping point - last ParB foci
+
+```{r}
+
+```

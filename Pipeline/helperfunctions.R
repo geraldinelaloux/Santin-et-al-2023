@@ -38,7 +38,7 @@ image_pixels_in_mesh <- function(image, mesh, include_cols = NULL) {
           include_xy = TRUE,
           force_df = TRUE,
           progress = FALSE,
-          include_cols = include_cols) |> bind_rows()  
+          include_cols = include_cols) |> bind_rows() 
     )
   }
   
@@ -47,7 +47,7 @@ image_pixels_in_mesh <- function(image, mesh, include_cols = NULL) {
       1:img_frames,
       imager::imsplit(image, "z"),
       \(i, img) {image_pixels_in_mesh(img, mesh, include_cols = include_cols)},
-      .id = "frame") 
+      .id = "frame")  |> mutate(frame =as.integer(frame))
   )
 }
 
