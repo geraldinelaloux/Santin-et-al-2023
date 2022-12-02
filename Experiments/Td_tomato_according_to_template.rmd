@@ -53,7 +53,7 @@ meshes |>
   inner_join(growing_cells, by = "id") |>
   as_tibble() -> TdTomato_LB
 
-# TODO rename area in pipeline to either bdelloplast_area or prey_area
+
 
 TdTomato_LB |> 
   # Keep only one line of data for each id to create the bins
@@ -62,7 +62,7 @@ TdTomato_LB |>
   slice_head(n = 1) |>
   ungroup() |>
   mutate(
-    bin_prey_area = santoku::chop_equally(prey_area, n_bins)) |>
+    bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins)) |>
   select(id, bin_prey_area) -> TdTomato_LB_bins
 
 ```
@@ -74,13 +74,11 @@ TdTomato_LB |>
 TdTomato_LB |> 
   inner_join(TdTomato_LB_bins, by = "id") |> 
   mutate(
-    time = frame * 8, # TODO move into pipeline
-    popping_time = popping_frame * 8,  # TODO move into pipeline
-    log_bdello_area_um2 = log(area_um2),
-    pop_area = popping_time / area,
-    pop_log_area = popping_time / log_bdello_area_um2,
-    difference_popping_point_end_of_growth_frame = popping_frame - first_peak,
-    difference_popping_point_end_of_growth_min   = difference_popping_point_end_of_growth_frame * 8,
+    log_bdellovibrio_area = log(bdellovibrio_area),
+    log_bdelloplast_area = log(bdelloplast_area),
+    prey_size_relative_popping_time = popping_time / bdelloplast_area,
+    log_prey_size_relative_popping_time = popping_time / log_bdelloplast_area,
+    maturation_time = popping_time - end_of_growth_time,
     condition = fct_relevel(condition, condition_order)) -> TdTomato_LB
 
 # TODO select the most useful infos
@@ -95,12 +93,12 @@ Compute the specific growth rate (µ) of B. bacteriovorus filaments by fitting a
 ```{r}
 TdTomato_LB |> 
   group_by(id) |>
-  filter(!is.infinite(log_bdello_area_um2)) |> 
+  filter(!is.infinite(log_bdellovibrio_area)) |> 
   nest(data = -id) |>
   # Fit lm  and get  the slope
   # TODO Might be useful to keep/add more info (goodness of fit, intercept, etc)
   mutate(
-    sgr_min = map_dbl(data, \(data) lm(log_bdello_area_um2 ~ time, data = data)$coefficients[[2]]),
+    sgr_min = map_dbl(data, \(data) lm(log_bdellovibrio_area ~ time, data = data)$coefficients[[2]]),
     sgr_h = sgr_min*60) -> specific_growth_rate
 
 TdTomato_LB |> inner_join(specific_growth_rate, by = "id") -> TdTomato_LB
@@ -129,7 +127,7 @@ Compute the descriptive statistics (mean, SD, CV, median, mad, rCV) of the data 
 ### Across all data
 
 ```{r}
-# TODO make sure everything interesting is summarized 
+# TODO make sure everything interesting is summarized
 # TODO add sgr to the summary 
 TdTomato_LB |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
@@ -137,7 +135,7 @@ TdTomato_LB |>
     n = n(),
     across(
       c(popping_time,
-        first_peak,
+        end_of_growth_time,
         start_size,
         central_size,
         end_size,
@@ -199,10 +197,61 @@ TdTomato_LB_over_all |> write_csv(file = analysis_folder / "TdTomato_LB_over_all
 # Popping time/prey area scatter plot
 TdTomato_LB |>
   ggplot(aes(
-    x = area,
+    x = bdelloplast_area,
     y = popping_time,
     color = condition)) +
   geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,700)
+
+# Popping time/ln(prey area) scatter plot
+TdTomato_LB |>
+  ggplot(aes(
+    x = log_bdelloplast_area,
+    y = popping_time)) +
+  geom_point(aes(
+    color = condition)) + 
+  geom_smooth(
+    method = "lm",
+    color = "black") + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+# Popping time across conditions
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = condition,
+    y = popping_time,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = popping_time_median ,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = condition),
+    color = "black",
+    data = IGR_condition)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,600)
+
+# Popping time across bins of bdelloplast area
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = popping_time,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = popping_time_median,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = IGR_bin)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
@@ -211,25 +260,154 @@ TdTomato_LB |>
 ### End of growth
 
 ```{r}
+TdTomato_LB |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = end_of_growth_time,
+    color = condition)) +
+  geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,700)
 
+# Popping time/ln(prey area) scatter plot
+TdTomato_LB |>
+  ggplot(aes(
+    x = log_bdelloplast_area,
+    y = end_of_growth_time)) +
+  geom_point(aes(
+    color = condition)) + 
+  geom_smooth(
+    method = "lm",
+    color = "black") + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+# Popping time across conditions
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = condition,
+    y = end_of_growth_time,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = end_of_growth_time_median ,
+    ymin = end_of_growth_time_median - end_of_growth_time_mad,
+    ymax = end_of_growth_time_median + end_of_growth_time_mad,
+    group = condition),
+    color = "black",
+    data = IGR_condition)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,600)
+
+# Popping time across bins of bdelloplast area
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = end_of_growth_time,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = end_of_growth_time_median,
+    ymin = end_of_growth_time_median - end_of_growth_time_mad,
+    ymax = end_of_growth_time_median + end_of_growth_time_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = IGR_bin)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,600)
 ```
 
 ### Popping point - end of growth
 
 ```{r}
+# Need to be frames or change KDE method
+TdTomato_LB |>
+  ggplot(aes(
+      x = difference_popping_point_end_of_growth_min/8)) +
+  geom_density(aes(
+      color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0, 0.7) + 
+  xlim(-200/8, 200/8) 
 
+TdTomato_LB |>
+  ggplot(aes(
+      x = difference_popping_point_end_of_growth_min/8)) +
+  geom_density(aes(
+      color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0, 0.7) + 
+  xlim(-200/8, 200/8) 
 ```
 
 ### Individual growth
 
 ```{r}
+TdTomato_LB |>
+  ggplot(aes(
+    y = bdellovibrio_area,
+    x = time)) +
+  geom_line(aes(
+    color = condition,
+    group = id)) + 
+  facet_wrap(~condition) + 
+  theme_classic() +  
+  theme(aspect.ratio=1)
+
+TdTomato_LB |>
+  ggplot(aes(
+    y = bdellovibrio_area,
+    x = time)) +
+  geom_line(aes(
+    color = bin_prey_area,
+    group = id)) + 
+  facet_wrap(~bin_prey_area) + 
+  theme_classic() +  
+  theme(aspect.ratio=1)
+
+TdTomato_LB |>
+  ggplot(aes(
+    y = log_bdellovibrio_area,
+    x = time)) +
+  geom_line(aes(
+    color = condition,
+    group = id)) + 
+  facet_wrap(~condition) + 
+  theme_classic() +  
+  theme(aspect.ratio=1)
+
+TdTomato_LB |>
+  ggplot(aes(
+    y = log_bdellovibrio_area,
+    x = time)) +
+  geom_line(aes(
+    color = bin_prey_area,
+    group = id)) + 
+  facet_wrap(~bin_prey_area) + 
+  theme_classic() +  
+  theme(aspect.ratio=1)
 
 ```
 
 ### Specific growth rate
 
 ```{r}
-
+specific_growth_rate |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = sgr_h)) + 
+  geom_point(aes(
+    color = condition)) +
+  ylim(0,100) +
+  theme_classic() + 
+  theme(aspect.ratio=1)
 ```
 
 ### Saving
