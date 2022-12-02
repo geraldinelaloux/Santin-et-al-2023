@@ -134,15 +134,15 @@ meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
     mutate(
       mesh_pix = mesh,
       mesh     = mesh * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      max.length = max.length * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      max.width  = max.width  * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
-      area   = st_area(mesh),
-      cent_x = st_centroid(mesh)[[1]][[1]],
-      cent_y = st_centroid(mesh)[[1]][[2]],
+#      max.length = max.length * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+#      max.width  = max.width  * settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio,
+      bdelloplast_area   = st_area(mesh),
+#      cent_x = st_centroid(mesh)[[1]][[1]],
+#      cent_y = st_centroid(mesh)[[1]][[2]],
       cell   = as.character(cell),
-      radius = mean(st_distance(st_cast(mesh, "MULTIPOINT"), st_centroid(mesh))),
-      estimated_area   = circle_area(radius),
-      estimated_volume = sphere_volume(radius),
+#      radius = mean(st_distance(st_cast(mesh, "MULTIPOINT"), st_centroid(mesh))),
+#      estimated_area   = circle_area(radius),
+#      estimated_volume = sphere_volume(radius),
       id = paste(id, cell, sep = "-"),
       config_file = fs::path_file(setting_file)
     ) |>
@@ -362,13 +362,13 @@ growing_cells <- filtered_pixels |>
   dplyr::filter(!is.infinite(first_peak)) |>
   dplyr::filter(frame <= first_peak) |>
   mutate(
-    area_um2    = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
+    bdellovibrio_area    = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
     perc_movie_growth_duration = max(frame)/movie_duration *100,
     growth_duration_frame = n(),
-    perc_growth_duration_under_min_area = length(area_um2[area_um2 < settings$Analysis_settings$Diffuse$Growth$Bdellovibrio_minimum_area_threshold_um])/growth_duration_frame * 100,
-    start_size   = first(area_um2),
-    central_size = central_size_fct(area_um2), # From RvR
-    end_size     = last(area_um2),
+    perc_growth_duration_under_min_area = length(bdellovibrio_area[bdellovibrio_area < settings$Analysis_settings$Diffuse$Growth$Bdellovibrio_minimum_area_threshold_um])/growth_duration_frame * 100,
+    start_size   = first(bdellovibrio_area),
+    central_size = central_size_fct(bdellovibrio_area), # From RvR
+    end_size     = last(bdellovibrio_area),
     grows        = central_size >= settings$Analysis_settings$Diffuse$Growth$Start_size_threshold * start_size & end_size >= settings$Analysis_settings$Diffuse$Growth$End_size_threshold * start_size) |>
   dplyr::filter(grows) |>
   dplyr::filter(perc_movie_growth_duration >= settings$Analysis_settings$Diffuse$Growth$Percentage_movie_growth_duration_threshold) |>
