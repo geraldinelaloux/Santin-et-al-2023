@@ -1,0 +1,610 @@
+# Downstream analysis & plotting of ParB *B. bacteriovorus* with *E. coli* prey grown in LB
+
+## Library loading
+
+```{r}
+library(tidyverse)
+library(sf)
+```
+
+## Parameters
+
+```{r}
+n_bins <- 3
+condition_order <- c("WT", "Joe", "William", "Averell") # TODO ? change into the proper strain names ?
+save_format <- "csv" # TODO ? Add choice of output and change function with a save_fct<- switch(save_format, ...)
+summarise_fcts <- c(
+  mean   = \(x) mean(x, na.rm = TRUE),
+  sd     = \(x) sd(x, na.rm = TRUE),
+  median = \(x) median(x, na.rm = TRUE),
+  mad    = \(x) mad(x, na.rm = TRUE),
+  CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE),
+  rCV    = \(x) mad(x, na.rm = TRUE) / median(x, na.rm = TRUE))
+```
+
+## Data loading
+
+Load .rds data from the prey size analysis pipeline & also load .rds data containing info on cell to discard after manual checking of outliers cells.
+
+```{r}
+analysis_folder <- "E:/Yoann/PN_combined/" |> fs::path()
+
+
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside.rds")) {
+focis_inside <- readRDS(analysis_folder/"focis_inside.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside_counts.rds")) {
+focis_inside_count <- readRDS(analysis_folder/"focis_inside_counts.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+
+
+if (fs::file_exists(analysis_folder/"bad_early.rds")) {
+bad_early <- readRDS(analysis_folder / "bad_early.rds")}
+if (fs::file_exists(analysis_folder/"bad_late.rds")) {
+bad_late <- readRDS(analysis_folder / "bad_late.rds")}
+
+if (fs::file_exists(analysis_folder/"bad_big_cell_parB.rds")) {
+bad_big_cell_parB <- readRDS(analysis_folder / "bad_big_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_small_cell_parB.rds")) {
+bad_small_cell_parB <- readRDS(analysis_folder / "bad_small_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_high_focis_cell_parB.rds")) {
+bad_high_focis_cell_parB <- readRDS(analysis_folder / "bad_high_focis_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_low_focis_cell_parB.rds")) {
+bad_low_focis_cell_parB <- readRDS(analysis_folder / "bad_low_focis_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_bot_right_quad_cell_parB.rds")) {
+bad_bot_right_quad_cell_parB <- readRDS(analysis_folder / "bad_bot_right_quad_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_pop.rds")) {
+bad_pop <- readRDS(analysis_folder / "bad_pop.rds")}
+
+
+corrected_count <- read_csv("C:/Users/distant/Downloads/corrected_foci-data.csv") |> 
+  select(id, corrected_count)
+
+```
+
+## Data merging
+
+Merge data from the outline file (id, bdelloplast outline, condition, replicate, bdelloplast area) with popping point data (id, popping frame/time), diffuse signal (id, bdellovibrio area, frame/time, end of growth) & discard the "bad" cells
+
+```{r}
+meshes |> 
+  filter(!id %in% c(bad_big_cell_parB, bad_high_focis_cell_parB, bad_low_focis_cell_parB, bad_small_cell_parB, bad_bot_right_quad_cell_parB)) |>
+  inner_join(popping_frames, by = "id") |>
+  inner_join(focis_inside_count, by = "id") |>
+  left_join(corrected_count, by = "id") |>
+  mutate(
+    strain = condition,
+    condition = case_when(
+      condition == "WT_906" ~ "WT",
+      condition == "William_906" ~ "William",
+      TRUE ~ condition),
+    is_bad_pop = if_else(id %in% bad_pop, TRUE, FALSE)) |>
+  ungroup()  -> ParB_LB
+```
+
+## Data cleaning
+
+```{r}
+ParB_LB |> 
+  as_tibble() |>
+  filter(
+    frame > 1,
+    time <= popping_time) |>
+  group_by(id, condition) |>
+  mutate(
+    has_early_focis = any(frame %in% 2:3 & n_foci >= 1),
+    perc_time_low_focis_number = sum(n_foci %in% 0:1) / n()) |>
+  filter(
+    !has_early_focis,
+    perc_time_low_focis_number <= 0.9) |>
+  group_by(id, condition, replicate, bdelloplast_area, popping_time) |>
+  mutate(
+    popping_time = if_else(is.na(corrected_count), popping_time, NA_integer_)) |>
+  summarize(
+    max_foci = if_else(any(is.na(corrected_count)), max(n_foci), unique(as.integer(corrected_count))),
+    relative_progenies_per_area = unique(max_foci/bdelloplast_area),
+    start_of_first_replication = find_min(time, n_foci >= 1),
+    start_of_last_replication =  if_else(any(n_foci == max_foci), find_min(time, n_foci == max_foci), NA_real_)
+    ) |> 
+  ungroup() |>
+  mutate(
+    start_of_last_replication = if_else(is.infinite(start_of_last_replication), NA_real_, start_of_last_replication),
+    condition = fct_relevel(condition, condition_order),
+    log_bdelloplast_area = log(bdelloplast_area),
+    bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins),
+    replication_time = start_of_last_replication - start_of_first_replication,
+    difference_popping_time_last_replication = popping_time - start_of_last_replication) -> ParB_LB
+```
+
+## Downstream analysis (can be moved to the pipeline)
+
+```{r}
+
+```
+
+## Descriptive statistics (Summarized data)
+
+Compute the descriptive statistics (mean, SD, CV, median, mad, rCV) of the data across everything, condition, bins of the prey area, number of foci
+
+-   Data \|\> group() \|\> summarize() -\> *uniform way of naming with data name and group* (for plotting the statistics)
+
+*uniform way of naming with data name and group \|\>* pivot_longer() -\> show & save (for easier reading)
+
+### Across all data
+
+```{r}
+# TODO make sure everything interesting is summarized
+# TODO add sgr to the summary 
+ParB_LB |>
+  group_by(id) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        max_foci,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_all
+
+
+ParB_LB_over_all |>
+  pivot_longer(
+    cols = -n,
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+
+```
+
+### Across strains (condition)
+
+```{r}
+ParB_LB |>
+  group_by(id) |>
+  group_by(condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        max_foci,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_condition
+
+
+ParB_LB_over_condition |>
+  pivot_longer(
+    cols = -c(n, condition),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+```
+
+### Across replicates (should be important)
+
+```{r}
+ParB_LB |>
+  group_by(id) |> 
+  group_by(replicate) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        max_foci,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_replicate
+
+
+ParB_LB_over_replicate |>
+  pivot_longer(
+    cols = -c(n, replicate),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+```
+
+### Across strain & replicates (also important)
+
+```{r}
+ParB_LB |>
+  group_by(id) |>
+  group_by(condition, replicate) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        max_foci,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_condition_and_replicate
+
+ParB_LB_over_condition_and_replicate |>
+  pivot_longer(
+    cols = -c(n, condition, replicate),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+```
+
+### Across prey size bins
+
+```{r}
+ParB_LB |>
+  group_by(id) |>
+  group_by(bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        max_foci,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_bins
+
+
+ParB_LB_over_bins |>
+  pivot_longer(
+    cols = -c(n, bin_prey_area),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+```
+
+### Across prey max foci & condition/bins (for bubble plots)
+
+```{r}
+ParB_LB |>
+  group_by(id) |> 
+  group_by(max_foci, condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_max_foci_and_condition
+
+
+ParB_LB |>
+  group_by(id) |>
+  group_by(max_foci, bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_LB_over_max_foci_and_bins
+
+
+
+```
+
+### Saving
+
+```{r}
+# TODO do a loop or a purrr::walk
+TdTomato_LB_over_all |> write_csv(file = analysis_folder / "TdTomato_LB_over_all.csv")
+```
+
+## Data plotting
+
+### Popping point
+
+```{r}
+# TODO Make sure overall plots parts are rougthly in the same order
+# Should we add someting like a pch over replicates or another plot with color = replicate ?
+# Maybe we should make a list like that (plot_name = plot) maybe nested (not sure) so we can loop / purrr::walk to save
+
+# Popping time/prey area scatter plot
+ParB_LB |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = popping_time,
+    color = condition)) +
+  geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,700)
+
+# Popping time/ln(prey area) scatter plot
+ParB_LB |>
+  ggplot(aes(
+    x = log_bdelloplast_area,
+    y = popping_time)) +
+  geom_point(aes(
+    color = condition)) + 
+  geom_smooth(
+    method = "lm",
+    color = "black") + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+# Popping time across conditions
+ParB_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = condition,
+    y = popping_time,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = popping_time_median ,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = condition),
+    color = "black",
+    data = ParB_LB_over_condition)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,600)
+
+# Popping time across bins of bdelloplast area
+ParB_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = popping_time,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = popping_time_median,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = ParB_LB_over_bins)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,600)
+```
+
+### Number of offspring
+
+```{r}
+ParB_LB |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = max_foci,
+    color = condition)) +
+  geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+ParB_LB |>
+  ggplot(aes(
+    x = log_bdelloplast_area,
+    y = max_foci,
+    color = condition)) +
+  geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+# Popping time across conditions
+ParB_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = condition,
+    y = max_foci,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = max_foci_median ,
+    ymin = max_foci_median - max_foci_mad,
+    ymax = max_foci_median + max_foci_mad,
+    group = condition),
+    color = "black",
+    data = ParB_LB_over_condition)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) 
+
+ParB_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = max_foci,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = max_foci_median ,
+    ymin = max_foci_median - max_foci_mad,
+    ymax = max_foci_median + max_foci_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = ParB_LB_over_bins)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) 
+
+
+ParB_LB_over_max_foci_and_condition |>
+  ggplot(aes(
+    x = condition,
+    y = max_foci,
+    size = n,
+    color = condition)) +
+  geom_point(alpha=0.5) +
+  scale_size(range = c(5, 20)) + 
+  theme_classic() + theme(aspect.ratio=1)
+
+ParB_LB_over_max_foci_and_bins |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = max_foci,
+    size = n,
+    color = bin_prey_area)) +
+  geom_point(alpha=0.5) +
+  scale_size(range = c(5, 20)) + 
+  theme_classic() + theme(aspect.ratio=1)
+```
+
+### Number of offspring/area
+
+```{r}
+ParB_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = condition,
+    y = relative_progenies_per_area,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = relative_progenies_per_area_median ,
+    ymin = relative_progenies_per_area_median - relative_progenies_per_area_mad,
+    ymax = relative_progenies_per_area_median + relative_progenies_per_area_mad,
+    group = condition),
+    color = "black",
+    data = ParB_LB_over_condition)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) 
+
+ParB_LB |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = relative_progenies_per_area,
+    color = bin_prey_area)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = relative_progenies_per_area_median ,
+    ymin = relative_progenies_per_area_median - relative_progenies_per_area_mad,
+    ymax = relative_progenies_per_area_median + relative_progenies_per_area_mad,
+    group = bin_prey_area),
+    color = "black",
+    data = ParB_LB_over_bins)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) 
+```
+
+### Segregation timing (1^st^ ParB foci - last ParB foci)
+
+```{r}
+ParB_LB |>
+ggplot(aes(
+    x = start_of_last_replication,
+    y = start_of_first_replication)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+ParB_LB |>
+ggplot(aes(
+    x = start_of_last_replication,
+    y = start_of_first_replication)) +
+  geom_point(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  group_by(id) |>
+  ggplot(aes(
+    x = replication_time/8)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = as.integer(replication_time/8))) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = replication_time)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = replication_time)) +
+  geom_density(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = replication_time)) +
+  geom_density(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+```
+
+### Popping point - last ParB foci
+
+```{r}
+ParB_LB |>
+ggplot(aes(
+    x = popping_time,
+    y = start_of_last_replication)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+ParB_LB |>
+ggplot(aes(
+    x = popping_time,
+    y = start_of_last_replication)) +
+  geom_point(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = difference_popping_time_last_replication)) +
+  geom_density() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = difference_popping_time_last_replication)) +
+  geom_density(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+ParB_LB |>
+  ggplot(aes(
+    x = difference_popping_time_last_replication)) +
+  geom_density(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
+
+```

@@ -5,14 +5,13 @@ title: Visualisation of Bdellovibrio growth dynamics
 
 ### Prerequisites
 
-This set of code is part of *insert paper title here*. The full set of analysis scripts, templates & data can be found at [https://github.com/giatomo/prey_size_analysis](https://github.com/giatomo/prey_size_analysis) and uses the output of `Pipeline_final.Rmd`.
+This set of code is part of *insert paper title here*. The full set of analysis scripts, templates & data can be found at <https://github.com/giatomo/prey_size_analysis> and uses the output of `Pipeline_final.Rmd`.
 
 To install dependencies run the following chunck:
 
 ```{r}
 install.packages(setdiff(c('sf', 'tidyverse', 'fs', 'santoku', 'ggbeeswarm'), rownames(installed.packages())))  
 ```
-
 
 # Downstream analysis & plotting of TdTomato *B. bacteriovorus* with *E. coli* prey grown in LB
 
@@ -41,8 +40,7 @@ summarise_fcts <- c(
 
 ## Data loading
 
-Load .rds data from the prey size analysis pipeline & also load .rds data containing info on cell to discard after manual checking of outliers cells.
-Change `analysis_folder` parameter to correct path to data. Make sure downstream paths are as set below or change paths below accordingly.
+Load .rds data from the prey size analysis pipeline & also load .rds data containing info on cell to discard after manual checking of outliers cells. Change `analysis_folder` parameter to correct path to data. Make sure downstream paths are as set below or change paths below accordingly.
 
 ```{r}
 analysis_folder <- "E:/Yoann/IGR_all/" |> fs::path() # TODO change path to relative path from github folder or fictive 'data folder'
@@ -490,8 +488,7 @@ TdTomato_LB |>
     color = condition,
     group = id)) + 
   facet_wrap(~condition) + 
-  theme_classic() +  
-  theme(aspect.ratio=1)
+  theme_classic() + theme(aspect.ratio=1)
 
 TdTomato_LB |>
   ggplot(aes(
@@ -501,8 +498,7 @@ TdTomato_LB |>
     color = bin_prey_area,
     group = id)) + 
   facet_wrap(~bin_prey_area) + 
-  theme_classic() +  
-  theme(aspect.ratio=1)
+  theme_classic() + theme(aspect.ratio=1)
 
 TdTomato_LB |>
   ggplot(aes(
@@ -512,8 +508,7 @@ TdTomato_LB |>
     color = condition,
     group = id)) + 
   facet_wrap(~condition) + 
-  theme_classic() +  
-  theme(aspect.ratio=1)
+  theme_classic() + theme(aspect.ratio=1)
 
 TdTomato_LB |>
   ggplot(aes(
@@ -523,8 +518,7 @@ TdTomato_LB |>
     color = bin_prey_area,
     group = id)) + 
   facet_wrap(~bin_prey_area) + 
-  theme_classic() +  
-  theme(aspect.ratio=1)
+  theme_classic() + theme(aspect.ratio=1)
 
 ```
 
