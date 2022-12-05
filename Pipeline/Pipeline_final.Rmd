@@ -125,7 +125,7 @@ mesh_files <- fs::dir_ls(settings$Analysis_settings$Folders$Meshes_folder, glob 
 buffer_pix <- compute_buffer_pix(settings$Analysis_settings$Meshes$Buffer_um, settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio)
 
 meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
-    select(-c("algorithm", "birthframe", "polarity", "ancestors", "descendants", "stage", "timelapse", "divisions", "box")) |>
+    select(-c("algorithm", "birthframe", "polarity", "ancestors", "descendants", "stage", "timelapse", "divisions", "box", "max.length", "max.width")) |>
     mutate(condition = fs::path_file(filename) |> fs::path_ext_remove()) |>
     st_sf() |>
     rename(image_id = frame) |>
@@ -147,7 +147,8 @@ meshes <- map_df(mesh_files, \(x) meshes_fct(x), .id = "filename") |>
       config_file = fs::path_file(setting_file)
     ) |>
     group_by(phase_image_name) |>
-    mutate(mesh_buffered = st_make_valid(sf::st_buffer(mesh_pix, dist = buffer_pix, nQuadSegs = 5)))
+    mutate(mesh_buffered = st_make_valid(sf::st_buffer(mesh_pix, dist = buffer_pix, nQuadSegs = 5))) |>
+    select_if(\(col){any(!is.na(col))})
 
 
 rm(mesh_files, images_infos)
@@ -165,7 +166,7 @@ if (!is.null(settings$Analysis_settings$Folders$Phase_folder)) {
 l_meshes  <- get_mesh_list(meshes, mesh_buffered, id, phase_image_path)
 img_paths <- get_image_list(meshes, phase_image_path)
 
-phase_intensity <- extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) 
+phase_intensity <- extract_image_pixels_from_meshes(img_paths, l_meshes, include_cols = c("id"), parallel = TRUE) # frame came from r software -> start = 1
 
 rm(l_meshes)
 gc()
@@ -204,7 +205,8 @@ popping_frames <- phase_intensity_summary |>
      popping_frame = find_min(frame, for_which = is_local_peak & frame >= settings$Analysis_settings$Popping_point_phase$Minimum_frame)
     ) |> 
   filter(frame == popping_frame) |>
-  select(id, popping_frame)
+  mutate(popping_time = popping_frame * settings$Analysis_settings$Microscopy_info$Frame_to_min_conversion) |>
+  select(id, popping_time)
 
 
   
@@ -271,7 +273,7 @@ focis_all <- map_df(detected_foci_files, \(x) read_csv(x), .id = "focis_detected
       quality      >  settings$Analysis_settings$Focis$Good_focis_thresholds$Minimum_quality) 
 
 focis_all |>
-    group_by(condition ,replicate, focis_image_name) |>
+    group_by(focis_image_name) |>
     group_split() |>
     purrr::map(~sfheaders::sf_point(.x, x = "position_x", y ="position_y", keep =TRUE)) -> l_focis
 
@@ -295,10 +297,13 @@ st_geometry(meshes) <- "mesh"
 focis_inside <- purrr::map2_dfr(l_focis, l_mesh, ~points_in_mesh(.x,.y)) 
 
 focis_inside_count <- focis_inside |>
+  mutate(frame = frame + 1) |> # 05/12/2022 Fixed small issue I didn't see before (should just shift the result by 1 frame) | # frame came from Trackmate software -> start = 0
   count(id, frame, .drop = FALSE) |>
   complete(
     nesting(id), frame,
-    fill = list(n = 0)) 
+    fill = list(n = 0)) |>
+  rename(n_foci = n) |>
+  mutate(time = frame * settings$Analysis_settings$Microscopy_info$Frame_to_min_conversion)
 
 rm(l_focis, l_mesh)
 gc()
@@ -353,16 +358,14 @@ growing_cells <- filtered_pixels |>
       strict = FALSE,
       endbehavior = 1), ##span is the range the local maximum is searched (now: 12frames up/down = 
     has_peak = TRUE %in% is_local_peak) |> #if there is no peak, the cell is discarded
-  dplyr::filter(has_peak) |>
-  dplyr::filter(n_pixels > 10) |>
+  dplyr::filter(has_peak) |> dplyr::filter(n_pixels > 10) |>
   mutate(
     first_peak = min(frame[which(is_local_peak == TRUE & frame >= settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame)]),
     # first_peak = find_min(frame, for_which = is_local_peak == TRUE & frame >= settings$Analysis_settings$Diffuse$Growth$Min_first_peak_frame), # to try
     movie_duration = max(frame)) |>
-  dplyr::filter(!is.infinite(first_peak)) |>
-  dplyr::filter(frame <= first_peak) |>
+  dplyr::filter(!is.infinite(first_peak)) |> dplyr::filter(frame <= first_peak) |>
   mutate(
-    bdellovibrio_area    = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
+    bdellovibrio_area = n_pixels * (settings$Analysis_settings$Microscopy_info$Pixel_to_um_ratio^2),
     perc_movie_growth_duration = max(frame)/movie_duration *100,
     growth_duration_frame = n(),
     perc_growth_duration_under_min_area = length(bdellovibrio_area[bdellovibrio_area < settings$Analysis_settings$Diffuse$Growth$Bdellovibrio_minimum_area_threshold_um])/growth_duration_frame * 100,
@@ -372,8 +375,11 @@ growing_cells <- filtered_pixels |>
     grows        = central_size >= settings$Analysis_settings$Diffuse$Growth$Start_size_threshold * start_size & end_size >= settings$Analysis_settings$Diffuse$Growth$End_size_threshold * start_size) |>
   dplyr::filter(grows) |>
   dplyr::filter(perc_movie_growth_duration >= settings$Analysis_settings$Diffuse$Growth$Percentage_movie_growth_duration_threshold) |>
-  dplyr::filter(perc_growth_duration_under_min_area <= settings$Analysis_settings$Diffuse$Growth$Growth_duration_under_min_area_threshold)
-
+  dplyr::filter(perc_growth_duration_under_min_area <= settings$Analysis_settings$Diffuse$Growth$Growth_duration_under_min_area_threshold) |>
+  mutate(
+    time = frame * settings$Analysis_settings$Microscopy_info$Frame_to_min_conversion,
+    end_of_growth_time = first_peak *  settings$Analysis_settings$Microscopy_info$Frame_to_min_conversion) |>
+  select(-c(frame, first_peak))
 
 rm(filtered_pixels)
 gc()

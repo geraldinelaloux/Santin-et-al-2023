@@ -165,7 +165,7 @@ extract_image_pixels_from_meshes <- function(images_paths, meshes, include_cols 
     map_function <- furrr::future_map2_dfr
   }
   else if (isTRUE(parallel)) {
-    plan(multisession, workers = future::availableCores()-2)
+    plan(multisession, workers = future::availableCores()-4)
     map_function <- furrr::future_map2_dfr
   }
   else {
@@ -190,26 +190,25 @@ find_max <- function(vector, for_which) {max(vector[which(for_which)])}
 
 
 get_mesh_list <- function(meshes, mesh_col, mesh_id_col, split_by){
-   active_geometry <- attr(meshes, "sf_column")
-   st_geometry(meshes) <- deparse(substitute(mesh_id_col))
+  active_geometry <- attr(meshes, "sf_column")
+  st_geometry(meshes) <- deparse(substitute(mesh_id_col))
    
-vars <- c(
-  deparse(substitute(mesh_col)),
-  deparse(substitute(mesh_id_col)),
-  deparse(substitute(split_by)))
-   
-   meshes |>
-   as_tibble() |>
-   select(all_of(vars)) |>
-   st_sf() |>
-   arrange({{split_by}}) |>
-   group_by({{split_by}}) |>
-   group_split() -> l_meshes
-   
-   st_geometry(meshes) <- active_geometry
-   return(l_meshes)
-   
-  
+  vars <- c(
+    deparse(substitute(mesh_col)),
+    deparse(substitute(mesh_id_col)),
+    deparse(substitute(split_by)))
+     
+     meshes |>
+     as_tibble() |>
+     select(all_of(vars)) |>
+     st_sf() |>
+     arrange({{split_by}}) |>
+     group_by({{split_by}}) |>
+     group_split() -> l_meshes
+     
+     st_geometry(meshes) <- active_geometry
+     return(l_meshes)
+     
 }
 
 get_image_list <- function(meshes, image_path_col) {

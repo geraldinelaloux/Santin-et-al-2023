@@ -13,6 +13,13 @@ library(sf)
 n_bins <- 3
 condition_order <- c("WT", "Joe", "William", "Averell") # TODO ? change into the proper strain names ?
 save_format <- "csv" # TODO ? Add choice of output and change function with a save_fct<- switch(save_format, ...)
+summarise_fcts <- c(
+  mean   = \(x) mean(x, na.rm = TRUE),
+  sd     = \(x) sd(x, na.rm = TRUE),
+  median = \(x) median(x, na.rm = TRUE),
+  mad    = \(x) mad(x, na.rm = TRUE),
+  CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE),
+  rCV    = \(x) mad(x, na.rm = TRUE) / median(x, na.rm = TRUE))
 ```
 
 ## Data loading
@@ -75,8 +82,8 @@ TdTomato_LB |>
   inner_join(TdTomato_LB_bins, by = "id") |> 
   mutate(
     log_bdellovibrio_area = log(bdellovibrio_area),
-    log_bdelloplast_area = log(bdelloplast_area),
-    prey_size_relative_popping_time = popping_time / bdelloplast_area,
+    log_bdelloplast_area  = log(bdelloplast_area),
+    prey_size_relative_popping_time     = popping_time / bdelloplast_area,
     log_prey_size_relative_popping_time = popping_time / log_bdelloplast_area,
     maturation_time = popping_time - end_of_growth_time,
     condition = fct_relevel(condition, condition_order)) -> TdTomato_LB
@@ -99,7 +106,7 @@ TdTomato_LB |>
   # TODO Might be useful to keep/add more info (goodness of fit, intercept, etc)
   mutate(
     sgr_min = map_dbl(data, \(data) lm(log_bdellovibrio_area ~ time, data = data)$coefficients[[2]]),
-    sgr_h = sgr_min*60) -> specific_growth_rate
+    sgr_h = sgr_min * 60) -> specific_growth_rate
 
 TdTomato_LB |> inner_join(specific_growth_rate, by = "id") -> TdTomato_LB
 
@@ -140,6 +147,7 @@ TdTomato_LB |>
         central_size,
         end_size,
         difference_popping_point_end_of_growth_min,
+        specific_growth_rate
       ),
       summarise_fcts,
       .names = "{.col}_{.fn}")) -> TdTomato_LB_over_all
@@ -156,25 +164,114 @@ TdTomato_LB_over_all |>
 ### Across strains (condition)
 
 ```{r}
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |> ungroup() |>
+  group_by(condition) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        end_of_growth_time,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+        specific_growth_rate
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> TdTomato_LB_over_condition
 
+
+TdTomato_LB_over_condition |>
+  pivot_longer(
+    cols = -c(n, condition),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
 ```
 
 ### Across replicates (should be important)
 
 ```{r}
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |> ungroup() |>
+  group_by(replicate) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        end_of_growth_time,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+        specific_growth_rate
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> TdTomato_LB_over_replicate
 
+
+TdTomato_LB_over_replicate |>
+  pivot_longer(
+    cols -c(n, replicate),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
 ```
 
 ### Across strain & replicates (also important)
 
 ```{r}
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |> ungroup() |>
+  group_by(condition, replicate) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        end_of_growth_time,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+        specific_growth_rate
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> TdTomato_LB_over_condition_and_replicate
+
+
+TdTomato_LB_over_condition_and_replicate |>
+  pivot_longer(
+    cols = -c(n, condition, replicate),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
 
 ```
 
 ### Across prey size bins
 
 ```{r}
+TdTomato_LB |>
+  group_by(id) |> slice_head(n = 1) |> ungroup() |>
+  group_by(bin_prey_area) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        end_of_growth_time,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+        specific_growth_rate
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> TdTomato_LB_over_bins
 
+
+TdTomato_LB_over_bins |>
+  pivot_longer(
+    cols = -c(n, bin_prey_area),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
 ```
 
 ### Saving
@@ -232,7 +329,7 @@ TdTomato_LB |>
     ymax = popping_time_median + popping_time_mad,
     group = condition),
     color = "black",
-    data = IGR_condition)+ 
+    data = TdTomato_LB_over_condition)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
@@ -251,7 +348,7 @@ TdTomato_LB |>
     ymax = popping_time_median + popping_time_mad,
     group = bin_prey_area),
     color = "black",
-    data = IGR_bin)+ 
+    data = TdTomato_LB_over_bins)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
@@ -297,7 +394,7 @@ TdTomato_LB |>
     ymax = end_of_growth_time_median + end_of_growth_time_mad,
     group = condition),
     color = "black",
-    data = IGR_condition)+ 
+    data = TdTomato_LB_over_condition)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
@@ -316,7 +413,7 @@ TdTomato_LB |>
     ymax = end_of_growth_time_median + end_of_growth_time_mad,
     group = bin_prey_area),
     color = "black",
-    data = IGR_bin)+ 
+    data = TdTomato_LB_over_bins)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
@@ -326,6 +423,23 @@ TdTomato_LB |>
 
 ```{r}
 # Need to be frames or change KDE method
+# Seems to work ok with time on ParB_M9 (could be bc of redundancy in df here ? or idk)
+ParB_M9 |>
+ggplot(aes(
+    x = popping_time,
+    y = end_of_growth)) +
+  geom_point(aes(color = bin_prey_area)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
+ParB_M9 |>
+ggplot(aes(
+    x = popping_time,
+    y = end_of_growth)) +
+  geom_point(aes(color = condition)) + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
+
 TdTomato_LB |>
   ggplot(aes(
       x = difference_popping_point_end_of_growth_min/8)) +
@@ -399,7 +513,7 @@ TdTomato_LB |>
 ### Specific growth rate
 
 ```{r}
-specific_growth_rate |>
+TdTomato_LB |>
   ggplot(aes(
     x = bdelloplast_area,
     y = sgr_h)) + 
@@ -408,6 +522,32 @@ specific_growth_rate |>
   ylim(0,100) +
   theme_classic() + 
   theme(aspect.ratio=1)
+
+TdTomato_LB |>
+  ggplot(aes(
+    x = condition,
+    y = sgr_h)) + 
+  ggbeeswarm::geom_quasirandom(aes(color = condition)) +
+  geom_pointrange(aes(
+    y = sgr_h_median,
+    ymin = sgr_h_median - sgr_h_mad,
+    ymax = sgr_h_median + sgr_h_mad),
+    color = "black",
+    data = TdTomato_LB_over_condition) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+TdTomato_LB |>
+  ggplot(aes(
+    x = bin_prey_area,
+    y = sgr_h)) + 
+  ggbeeswarm::geom_quasirandom(aes(color = condition)) +
+  geom_pointrange(aes(
+    y = sgr_h_median,
+    ymin = sgr_h_median - sgr_h_mad,
+    ymax = sgr_h_median + sgr_h_mad),
+    color = "black",
+    data = TdTomato_LB_over_bins) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
 ```
 
 ### Saving
