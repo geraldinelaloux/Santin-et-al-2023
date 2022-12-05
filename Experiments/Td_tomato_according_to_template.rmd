@@ -1,4 +1,20 @@
-# Downstream analysis & plotting of TdTomato *B. bacteriovorus* with *E. coli* prey grown in LB
+---
+author: Thomas Lamot
+title: Visualisation of Bdellovibrio growth dynamics
+---
+
+### Prerequisites
+
+This set of code is part of *insert paper title here*. The full set of analysis scripts, templates & data can be found at [https://github.com/giatomo/prey_size_analysis](https://github.com/giatomo/prey_size_analysis) and uses the output of `Pipeline_final.Rmd`.
+
+To install dependencies run the following chunck:
+
+```{r}
+install.packages(setdiff(c('sf', 'tidyverse', 'fs', 'santoku', 'ggbeeswarm'), rownames(installed.packages())))  
+```
+
+
+# Downstream analysis & plotting of TdTomato *B. bacteriovorus* with *E. coli* prey grown in LB
 
 ## Library loading
 
@@ -11,16 +27,18 @@ library(sf)
 
 ```{r}
 n_bins <- 3
-condition_order <- c("WT", "Joe", "William", "Averell") # TODO ? change into the proper strain names ?
+condition_order <- c("WT", "Joe", "William", "Averell") # TODO ? change into the proper strain names ? 
+  ##RR I think it's not terribly important, as long as it's understandable
 save_format <- "csv" # TODO ? Add choice of output and change function with a save_fct<- switch(save_format, ...)
 ```
 
 ## Data loading
 
 Load .rds data from the prey size analysis pipeline & also load .rds data containing info on cell to discard after manual checking of outliers cells.
+Change `analysis_folder` parameter to correct path to data. Make sure downstream paths are as set below or change paths below accordingly.
 
 ```{r}
-analysis_folder <- "E:/Yoann/IGR_all/" |> fs::path()
+analysis_folder <- "E:/Yoann/IGR_all/" |> fs::path() # TODO change path to relative path from github folder or fictive 'data folder'
 
 # Pipeline output
 if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
@@ -42,7 +60,7 @@ if (fs::file_exists(analysis_folder/"bad_late.rds")) {
 
 ## Data merging
 
-Merge data from the outline file (id, bdelloplast outline, condition, replicate, bdelloplast area) with popping point data (id, popping frame/time), diffuse signal (id, bdellovibrio area, frame/time, end of growth) & discard the "bad" cells
+Merge data from the outline file (id, bdelloplast outline, condition, replicate, bdelloplast area) with popping point data (id, popping frame/time), diffuse signal (id, *Bdellovibrio* area, frame/time, end of growth) & discard the "bad" cells.
 
 ```{r}
 meshes |> 
@@ -67,7 +85,7 @@ TdTomato_LB |>
 
 ```
 
-## Data cleaning
+## Data cleaning & calculation of parameters for plotting
 
 ```{r}
 
@@ -88,7 +106,7 @@ TdTomato_LB |>
 
 ## Downstream analysis (can be moved to the pipeline)
 
-Compute the specific growth rate (µ) of B. bacteriovorus filaments by fitting a linear model : $ln(area_{prey})(t) = µ \cdot t + ln(area_{prey_{0}})$
+Compute the specific growth rate (µ) of *B. bacteriovorus* filaments by fitting a linear model : $ln(area_{prey})(t) = µ \cdot t + ln(area_{prey_{0}})$
 
 ```{r}
 TdTomato_LB |> 
