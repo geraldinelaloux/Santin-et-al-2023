@@ -4,7 +4,7 @@ This depository contains the code & datasets used in **Santin *et. al*,  Modulat
 
 ## Pipeline
 
-The pipeline is written as an R markdown file, where the user can choose to run the complete script or run the analysis chunk-by-chunk.
+The pipeline is written as an R markdown file `Pipeline_final.Rmd`, where the user can choose to run the complete script or run the analysis chunk-by-chunk.
 
 ### Data curation: before running the pipeline
 
@@ -38,14 +38,18 @@ Phase-contrast/Fluorescence
 
 The pipeline uses the following software:
 
-* R ≥ 4.2.2
+* [R ≥ 4.2.2](https://cran.r-project.org)
 * ImageJ2 with the [Trackmate Plugin](https://imagej.net/plugins/trackmate/) (standard in the [FIJI distribution of ImageJ](https://imagej.net/software/fiji/))
 * BFconvert from BioFormats bftools. (Download & unzip bftools.zip [here](https://downloads.openmicroscopy.org/bio-formats/5.5.2/artifacts/bftools.zip))
+
+### Other notes/requirements
+
 * It is convenient but not required to run R chunks from [Rstudio](https://posit.co/products/open-source/rstudio/)
+* The pipeline was used & tested in Windows 10
 
 ### The parameter file
 
-This file contains all the settings the pipeline needs to know to run properly. This is changed for each experiment. 
+This file `parameters.yml` contains all the settings the pipeline needs to know to run properly. This is changed for each experiment. You can find a `parameters.yml` file in each Experiments subfolder. This file contains the paths to the required softwares & datasets and the parameters used to compute the output data. When working with new data, make sure to at least change the folder paths & check the Microscopy settings (pixel to micron conversion & minutes per frame).
 
 ## Experiments
 
