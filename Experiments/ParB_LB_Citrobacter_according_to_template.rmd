@@ -27,7 +27,7 @@ summarise_fcts <- c(
 Load .rds data from the prey size analysis pipeline & also load .rds data containing info on cell to discard after manual checking of outliers cells.
 
 ```{r}
-analysis_folder <- "E:/Yoann/M9_ParB/" |> fs::path()
+analysis_folder <- "E:/Yoann/Citro/" |> fs::path()
 
 
 if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
@@ -50,17 +50,16 @@ Merge data from the outline file (id, bdelloplast outline, condition, replicate,
 meshes |> 
   inner_join(popping_frames, by = "id") |>
   inner_join(focis_inside_count, by = "id") |>
-  ungroup()  -> ParB_M9
+  ungroup()  -> ParB_LB_Citrobacter
 ```
 
 ## Data cleaning
 
 ```{r}
-ParB_M9 |> 
+ParB_LB_Citrobacter |> 
   as_tibble() |>
   filter(
-    frame > 1,
-    time <= popping_time) |>
+    frame > 1) |>
   group_by(id, condition) |>
   mutate(
     has_early_focis = any(frame %in% 2:3 & n_foci >= 1),
@@ -80,7 +79,7 @@ ParB_M9 |>
     log_bdelloplast_area = log(bdelloplast_area),
     bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins),
     replication_time = start_of_last_replication - start_of_first_replication,
-    difference_popping_time_last_replication = popping_time - start_of_last_replication) -> ParB_M9
+    difference_popping_time_last_replication = popping_time - start_of_last_replication) -> ParB_LB_Citrobacter
 ```
 
 ## Downstream analysis (can be moved to the pipeline)
@@ -102,7 +101,7 @@ Compute the descriptive statistics (mean, SD, CV, median, mad, rCV) of the data 
 ```{r}
 # TODO make sure everything interesting is summarized
 # TODO add sgr to the summary 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   summarise(
     n = n(),
@@ -116,10 +115,10 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_all
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_all
 
 
-ParB_M9_over_all |>
+ParB_LB_Citrobacter_over_all |>
   pivot_longer(
     cols = -n,
     names_to = c("variable", ".value"),
@@ -130,7 +129,7 @@ ParB_M9_over_all |>
 ### Across strains (condition)
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   group_by(condition) |>
   summarise(
@@ -145,10 +144,10 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_condition
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_condition
 
 
-ParB_M9_over_condition |>
+ParB_LB_Citrobacter_over_condition |>
   pivot_longer(
     cols = -c(n, condition),
     names_to = c("variable", ".value"),
@@ -158,7 +157,7 @@ ParB_M9_over_condition |>
 ### Across replicates (should be important)
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   group_by(replicate) |>
   summarise(
@@ -173,10 +172,10 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_replicate
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_replicate
 
 
-ParB_M9_over_replicate |>
+ParB_LB_Citrobacter_over_replicate |>
   pivot_longer(
     cols = -c(n, replicate),
     names_to = c("variable", ".value"),
@@ -186,7 +185,7 @@ ParB_M9_over_replicate |>
 ### Across strain & replicates (also important)
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   group_by(condition, replicate) |>
   summarise(
@@ -201,9 +200,9 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_condition_and_replicate
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_condition_and_replicate
 
-ParB_M9_over_condition_and_replicate |>
+ParB_LB_Citrobacter_over_condition_and_replicate |>
   pivot_longer(
     cols = -c(n, condition, replicate),
     names_to = c("variable", ".value"),
@@ -213,7 +212,7 @@ ParB_M9_over_condition_and_replicate |>
 ### Across prey size bins
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   group_by(bin_prey_area) |>
   summarise(
@@ -228,10 +227,10 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_bins
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_bins
 
 
-ParB_M9_over_bins |>
+ParB_LB_Citrobacter_over_bins |>
   pivot_longer(
     cols = -c(n, bin_prey_area),
     names_to = c("variable", ".value"),
@@ -241,7 +240,7 @@ ParB_M9_over_bins |>
 ### Across prey max foci & condition/bins (for bubble plots)
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   group_by(max_foci, condition) |>
   summarise(
@@ -255,10 +254,10 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_max_foci_and_condition
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_max_foci_and_condition
 
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |> ungroup() |>
   group_by(max_foci, bin_prey_area) |>
   summarise(
@@ -272,7 +271,7 @@ ParB_M9 |>
         difference_popping_time_last_replication
       ),
       summarise_fcts,
-      .names = "{.col}_{.fn}")) -> ParB_M9_over_max_foci_and_bins
+      .names = "{.col}_{.fn}")) -> ParB_LB_Citrobacter_over_max_foci_and_bins
 
 
 
@@ -295,7 +294,7 @@ TdTomato_LB_over_all |> write_csv(file = analysis_folder / "TdTomato_LB_over_all
 # Maybe we should make a list like that (plot_name = plot) maybe nested (not sure) so we can loop / purrr::walk to save
 
 # Popping time/prey area scatter plot
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = bdelloplast_area,
     y = popping_time,
@@ -306,7 +305,7 @@ ParB_M9 |>
   ylim(0,700)
 
 # Popping time/ln(prey area) scatter plot
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = log_bdelloplast_area,
     y = popping_time)) +
@@ -319,7 +318,7 @@ ParB_M9 |>
   theme(aspect.ratio=1)
 
 # Popping time across conditions
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |>
   ggplot(aes(
     x = condition,
@@ -332,13 +331,13 @@ ParB_M9 |>
     ymax = popping_time_median + popping_time_mad,
     group = condition),
     color = "black",
-    data = ParB_M9_over_condition)+ 
+    data = ParB_LB_Citrobacter_over_condition)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
 
 # Popping time across bins of bdelloplast area
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |>
   ggplot(aes(
     x = bin_prey_area,
@@ -351,7 +350,7 @@ ParB_M9 |>
     ymax = popping_time_median + popping_time_mad,
     group = bin_prey_area),
     color = "black",
-    data = ParB_M9_over_bins)+ 
+    data = ParB_LB_Citrobacter_over_bins)+ 
   theme_classic() + 
   theme(aspect.ratio=1) + 
   ylim(0,600)
@@ -360,7 +359,7 @@ ParB_M9 |>
 ### Number of offspring
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = bdelloplast_area,
     y = max_foci,
@@ -369,7 +368,7 @@ ParB_M9 |>
   theme_classic() + 
   theme(aspect.ratio=1)
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = log_bdelloplast_area,
     y = max_foci,
@@ -379,7 +378,7 @@ ParB_M9 |>
   theme(aspect.ratio=1)
 
 # Popping time across conditions
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |>
   ggplot(aes(
     x = condition,
@@ -392,11 +391,11 @@ ParB_M9 |>
     ymax = max_foci_median + max_foci_mad,
     group = condition),
     color = "black",
-    data = ParB_M9_over_condition)+ 
+    data = ParB_LB_Citrobacter_over_condition)+ 
   theme_classic() + 
   theme(aspect.ratio=1) 
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |>
   ggplot(aes(
     x = bin_prey_area,
@@ -409,12 +408,12 @@ ParB_M9 |>
     ymax = max_foci_median + max_foci_mad,
     group = bin_prey_area),
     color = "black",
-    data = ParB_M9_over_bins)+ 
+    data = ParB_LB_Citrobacter_over_bins)+ 
   theme_classic() + 
   theme(aspect.ratio=1) 
 
 
-ParB_M9_over_max_foci_and_condition |>
+ParB_LB_Citrobacter_over_max_foci_and_condition |>
   ggplot(aes(
     x = condition,
     y = max_foci,
@@ -424,7 +423,7 @@ ParB_M9_over_max_foci_and_condition |>
   scale_size(range = c(5, 20)) + 
   theme_classic() + theme(aspect.ratio=1)
 
-ParB_M9_over_max_foci_and_bins |>
+ParB_LB_Citrobacter_over_max_foci_and_bins |>
   ggplot(aes(
     x = bin_prey_area,
     y = max_foci,
@@ -438,7 +437,7 @@ ParB_M9_over_max_foci_and_bins |>
 ### Number of offspring/area
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |>
   ggplot(aes(
     x = condition,
@@ -451,11 +450,11 @@ ParB_M9 |>
     ymax = relative_progenies_per_area_median + relative_progenies_per_area_mad,
     group = condition),
     color = "black",
-    data = ParB_M9_over_condition)+ 
+    data = ParB_LB_Citrobacter_over_condition)+ 
   theme_classic() + 
   theme(aspect.ratio=1) 
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   group_by(id) |> slice_head(n = 1) |>
   ggplot(aes(
     x = bin_prey_area,
@@ -468,7 +467,7 @@ ParB_M9 |>
     ymax = relative_progenies_per_area_median + relative_progenies_per_area_mad,
     group = bin_prey_area),
     color = "black",
-    data = ParB_M9_over_bins)+ 
+    data = ParB_LB_Citrobacter_over_bins)+ 
   theme_classic() + 
   theme(aspect.ratio=1) 
 ```
@@ -476,7 +475,7 @@ ParB_M9 |>
 ### Segregation timing (1^st^ ParB foci - last ParB foci)
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
 ggplot(aes(
     x = start_of_last_replication,
     y = start_of_first_replication)) +
@@ -484,7 +483,7 @@ ggplot(aes(
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
 ggplot(aes(
     x = start_of_last_replication,
     y = start_of_first_replication)) +
@@ -492,21 +491,21 @@ ggplot(aes(
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = replication_time)) +
   geom_density() + 
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = replication_time)) +
   geom_density(aes(color = condition)) + 
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = replication_time)) +
   geom_density(aes(color = bin_prey_area)) + 
@@ -518,7 +517,7 @@ ParB_M9 |>
 ### Popping point - last ParB foci
 
 ```{r}
-ParB_M9 |>
+ParB_LB_Citrobacter |>
 ggplot(aes(
     x = popping_time,
     y = start_of_last_replication)) +
@@ -526,7 +525,7 @@ ggplot(aes(
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
 ggplot(aes(
     x = popping_time,
     y = start_of_last_replication)) +
@@ -534,21 +533,21 @@ ggplot(aes(
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0)) + scale_y_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = difference_popping_time_last_replication)) +
   geom_density() + 
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = difference_popping_time_last_replication)) +
   geom_density(aes(color = condition)) + 
   theme_classic() + 
   theme(aspect.ratio=1) + scale_x_continuous(expand = c(0, 0))
 
-ParB_M9 |>
+ParB_LB_Citrobacter |>
   ggplot(aes(
     x = difference_popping_time_last_replication)) +
   geom_density(aes(color = bin_prey_area)) + 
