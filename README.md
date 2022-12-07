@@ -4,14 +4,14 @@ This depository contains the code & datasets used in **Santin *et. al*,  Modulat
 
 ## Pipeline
 
-The pipeline is written as an R markdown file `Pipeline_final.Rmd`, where the user can choose to run the complete script or run the analysis chunk-by-chunk.
+The pipeline is written as an R markdown file `Pipeline_final.Rmd`, where the user can choose to run the complete script or run the analysis chunk-by-chunk. The pipeline loads the miscroscopy & segmentation data (see below), detects the popping time, and (depending on the data type) detects & counts foci and/or performs growth analysis based on cytoplasmic fluorescence.
 
 ### Data curation: before running the pipeline
 
 The pipeline contains code to process movies of bdellovibrio containing fluorescent foci and/or cytoplasmic signal & uses phase-contrast to detect the bdelloplasts. As input it needs folders containing
 
-* A .tiff or .tiffs of the full phase contrast movie(s); aligned so there is no drift (for instance using [Image Stabalizer](https://imagej.net/plugins/image-stabilizer)
-* A .tiff or .tiffsof the full fluorescent movie(s); aligned so there is no drift
+* A .tiff or .tiffs of the full phase contrast movie(s); aligned so there is no drift (for instance using [Image Stabalizer](https://imagej.net/plugins/image-stabilizer))
+* A .tiff or .tiffs of the full fluorescent movie(s); aligned so there is no drift
 * A .tiff or .tiffs of only the first frame of the phase movie(s)
 * The output of either [Oufti](www.oufti.org) or [MicrobeJ](https://microbej.com) segmentation of the bdelloplasts in the first frame of the phase contrast movies. This pipeline was tested with Oufti.
 
@@ -33,6 +33,10 @@ The pipeline uses the following software:
 This file `parameters.yml` contains all the settings the pipeline needs to know to run properly. This is changed for each experiment. You can find a `parameters.yml` file in each Experiments subfolder. This file contains the paths to the required softwares & datasets and the parameters used to compute the output data. When working with new data, make sure to at least change the folder paths & check the Microscopy settings (pixel to micron conversion & minutes per frame). 
 
 ## Experiments
+
+The *experiments* folder contains the data output & visualization code used in **Santin *et al.* ** This is divided in experiments exploring the *Bdellovibrio* **growth rate** (folder *Growth_rates*) and the number of **Progenies** and **Origins of Replication** (folder *Progenies_&_cell_cycle*). The code files containing the downstream statistical analysis and visualization are saved in the main Experiments folder.
+
+
 
 - Pipeline
 - Experiments
