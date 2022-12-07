@@ -6,7 +6,11 @@ title: "Pipeline for growth & cell cycle analysis of Bdellovibrio bacteriovorus"
 
 # Dependencies
 
-This pipeline has the following dependencies: *yaml, here, furrr, runner, sf, tidyverse, terra, fs, glue, uuid, splus2R, janitor*.
+This pipeline has the following dependencies: *yaml, here, furrr, runner, sf, tidyverse, terra, fs, glue, uuid, splus2R, janitor*. Run the following chunk to install missing dependencies:
+
+```{r, eval=FALSE}
+install.packages(setdiff(c('yaml', 'here', 'furrr', 'runner', 'sf', 'tidyverse', 'fs', 'glue', 'uuid', 'splus2R', 'janitor'), rownames(installed.packages())))
+```
 
 # Global settings: locate the parameter file.
 
