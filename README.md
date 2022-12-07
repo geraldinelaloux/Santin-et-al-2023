@@ -76,7 +76,7 @@ Parameters, output files obtained from our pipeline and .rmd file to reproduce t
     
 # Issues & requests
 
-If you encounter errors, have a question or a request, please open an [Issue](issues) or send an email to the [Laloux lab](mailto::geraldine.laloux@uclouvain.be). 
+If you encounter errors, have a question or a request, please open an [Issue](issues) or send an email to the [Laloux lab](mailto:geraldine.laloux@uclouvain.be). 
 
 # Authors
 
