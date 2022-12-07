@@ -74,5 +74,15 @@ Parameters, output files obtained from our pipeline and .rmd file to reproduce t
       - *compiled and summarized data*.csv
       - Plots.Rmd
     
-    
+# Issues & requests
+
+If you encounter errors, have a question or a request, please open an [Issue](issues) or send an email to the [Laloux lab](mailto::geraldine.laloux@uclouvain.be). 
+
+# Authors
+
+This pipeline is created & maintained by [Thomas Lamot](https://github.com/giatomo) (main author) and [Renske van Raaphorst](https://github.com/vrrenske) (co-author). 
+
+# Cite
+
+Y.G. Santin, T. Lamot, J. Kaljevic, R. van Raaphorst, G. Laloux (2022),  Modulation of prey size reveals adaptability and robustness in the cell cycle of an intracellular predator., *in submission*
 
