@@ -1,0 +1,455 @@
+# Downstream analysis & plotting of ParB *B. bacteriovorus* with *E. coli* prey grown in LB
+
+## Library loading
+
+```{r}
+library(tidyverse)
+library(sf)
+```
+
+## Parameters
+
+```{r}
+n_bins <- 3
+condition_order <- c("WT", "Joe", "William", "Averell") # TODO ? change into the proper strain names ?
+save_format <- "csv" # TODO ? Add choice of output and change function with a save_fct<- switch(save_format, ...)
+summarise_fcts <- c(
+  mean   = \(x) mean(x, na.rm = TRUE),
+  sd     = \(x) sd(x, na.rm = TRUE),
+  median = \(x) median(x, na.rm = TRUE),
+  mad    = \(x) mad(x, na.rm = TRUE),
+  CV     = \(x) sd(x, na.rm = TRUE) / mean(x, na.rm = TRUE),
+  rCV    = \(x) mad(x, na.rm = TRUE) / median(x, na.rm = TRUE))
+```
+
+
+```{r}
+analysis_folder <- "E:/Yoann/M9_1462/" |> fs::path()
+
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"growing_cells.rds")) {
+growing_cells <- readRDS(analysis_folder/"growing_cells.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+if (fs::file_exists(analysis_folder/"bad_high_sgr.rds")) {
+bad_high_sgr <- readRDS(analysis_folder / "bad_high_sgr.rds")}
+if (fs::file_exists(analysis_folder/"bad_early_pop.rds")) {
+bad_early_pop <- readRDS(analysis_folder / "bad_late_pop.rds")}
+if (fs::file_exists(analysis_folder/"bad_early_pop.rds")) {
+bad_late_pop <- readRDS(analysis_folder / "bad_late_pop.rds")}
+
+meshes |> 
+  # Discard id from manually curated data
+  filter(!id %in% c(bad_early, bad_late)) |>
+  # Join all the data together 
+  inner_join(popping_frames, by = "id") |>
+  inner_join(growing_cells, by = "id") |>
+  as_tibble() -> TdTomato_M9
+
+TdTomato_M9 |> 
+  # Keep only one line of data for each id to create the bins
+  # Avoid having and impact of the number of frames when creating *n_bins* bins of the same size 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  mutate(
+    bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins)) |>
+  select(id, bin_prey_area) -> TdTomato_M9_bins
+
+
+TdTomato_M9 |> 
+  inner_join(TdTomato_M9_bins, by = "id") |> 
+  mutate(
+    log_bdellovibrio_area = log(bdellovibrio_area),
+    log_bdelloplast_area  = log(bdelloplast_area),
+    prey_size_relative_popping_time     = popping_time / bdelloplast_area,
+    log_prey_size_relative_popping_time = popping_time / log_bdelloplast_area,
+    maturation_time = popping_time - end_of_growth_time,
+    condition = fct_relevel(condition, condition_order),
+    media = "M9") -> TdTomato_M9
+
+analysis_folder <- "E:/Yoann/IGR_all/" |> fs::path() # TODO change path to relative path from github folder or fictive 'data folder'
+
+# Pipeline output
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+  meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"growing_cells.rds")) {
+  growing_cells <- readRDS(analysis_folder/"growing_cells.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+  popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+  phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+
+# Data issued from manual curation
+if (fs::file_exists(analysis_folder/"bad_early.rds")) {
+  bad_early <- readRDS(analysis_folder / "bad_early.rds")}
+if (fs::file_exists(analysis_folder/"bad_late.rds")) {
+  bad_late <- readRDS(analysis_folder / "bad_late.rds")}
+
+meshes |> 
+  # Discard id from manually curated data
+  filter(!id %in% c(bad_early, bad_late)) |>
+  # Join all the data together 
+  inner_join(popping_frames, by = "id") |>
+  inner_join(growing_cells, by = "id") |>
+  as_tibble() -> TdTomato_LB
+
+TdTomato_LB |> 
+  # Keep only one line of data for each id to create the bins
+  # Avoid having and impact of the number of frames when creating *n_bins* bins of the same size 
+  group_by(id) |>
+  slice_head(n = 1) |>
+  ungroup() |>
+  mutate(
+    bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins)) |>
+  select(id, bin_prey_area) -> TdTomato_LB_bins
+
+
+TdTomato_LB |> 
+  inner_join(TdTomato_LB_bins, by = "id") |> 
+  mutate(
+    log_bdellovibrio_area = log(bdellovibrio_area),
+    log_bdelloplast_area  = log(bdelloplast_area),
+    prey_size_relative_popping_time     = popping_time / bdelloplast_area,
+    log_prey_size_relative_popping_time = popping_time / log_bdelloplast_area,
+    maturation_time = popping_time - end_of_growth_time,
+    condition = fct_relevel(condition, condition_order),
+    media = "LB") -> TdTomato_LB
+
+
+bind_rows(TdTomato_LB, TdTomato_M9) -> TdTomato_all_media
+
+TdTomato_all_media |> 
+  group_by(id) |>
+  filter(!is.infinite(log_bdellovibrio_area)) |> 
+  nest(data = -id) |>
+  # Fit lm  and get  the slope
+  # TODO Might be useful to keep/add more info (goodness of fit, intercept, etc)
+  mutate(
+    specific_growth_rate_min = map_dbl(data, \(data) lm(log_bdellovibrio_area ~ time, data = data)$coefficients[[2]]),
+    specific_growth_rate_h = specific_growth_rate_min * 60) -> specific_growth_rate
+
+TdTomato_all_media |> inner_join(specific_growth_rate, by = "id") -> TdTomato_all_media
+
+```
+
+```{r}
+analysis_folder <- "E:/Yoann/M9_ParB/" |> fs::path()
+
+
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside.rds")) {
+focis_inside <- readRDS(analysis_folder/"focis_inside.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside_counts.rds")) {
+focis_inside_count <- readRDS(analysis_folder/"focis_inside_counts.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+
+meshes |> 
+  inner_join(popping_frames, by = "id") |>
+  inner_join(focis_inside_count, by = "id") |>
+  ungroup() |> 
+  as_tibble() |>
+  filter(
+    frame > 1,
+    time <= popping_time) |>
+  group_by(id, condition) |>
+  mutate(
+    has_early_focis = any(frame %in% 2:3 & n_foci >= 1),
+    perc_time_low_focis_number = sum(n_foci %in% 0:1) / n()) |>
+  filter(
+    !has_early_focis,
+    perc_time_low_focis_number <= 0.9) |>
+  group_by(id, condition, replicate, bdelloplast_area, popping_time) |>
+  summarize(
+    max_foci = max(n_foci),
+    relative_progenies_per_area = unique(max_foci/bdelloplast_area),
+    start_of_first_replication = find_min(time, n_foci >= 1),
+    start_of_last_replication = find_min(time, n_foci == max_foci)) |> 
+  ungroup() |>
+  mutate(
+    condition = fct_relevel(condition, condition_order),
+    log_bdelloplast_area = log(bdelloplast_area),
+    bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins),
+    replication_time = start_of_last_replication - start_of_first_replication,
+    difference_popping_time_last_replication = popping_time - start_of_last_replication,
+    media = "M9") -> ParB_M9
+
+analysis_folder <- "E:/Yoann/PN_combined/" |> fs::path()
+
+
+if (fs::file_exists(analysis_folder/"meshes_ids.rds")) {
+meshes <- readRDS(analysis_folder/"meshes_ids.rds")}
+if (fs::file_exists(analysis_folder/"popping_frames.rds")) {
+popping_frames <- readRDS(analysis_folder/"popping_frames.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside.rds")) {
+focis_inside <- readRDS(analysis_folder/"focis_inside.rds")}
+if (fs::file_exists(analysis_folder/"focis_inside_counts.rds")) {
+focis_inside_count <- readRDS(analysis_folder/"focis_inside_counts.rds")}
+if (fs::file_exists(analysis_folder/"phase_intensity_summary.rds")) {
+phase_intensity_summary <- readRDS(analysis_folder/"phase_intensity_summary.rds")}
+
+
+if (fs::file_exists(analysis_folder/"bad_early.rds")) {
+bad_early <- readRDS(analysis_folder / "bad_early.rds")}
+if (fs::file_exists(analysis_folder/"bad_late.rds")) {
+bad_late <- readRDS(analysis_folder / "bad_late.rds")}
+
+if (fs::file_exists(analysis_folder/"bad_big_cell_parB.rds")) {
+bad_big_cell_parB <- readRDS(analysis_folder / "bad_big_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_small_cell_parB.rds")) {
+bad_small_cell_parB <- readRDS(analysis_folder / "bad_small_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_high_focis_cell_parB.rds")) {
+bad_high_focis_cell_parB <- readRDS(analysis_folder / "bad_high_focis_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_low_focis_cell_parB.rds")) {
+bad_low_focis_cell_parB <- readRDS(analysis_folder / "bad_low_focis_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_bot_right_quad_cell_parB.rds")) {
+bad_bot_right_quad_cell_parB <- readRDS(analysis_folder / "bad_bot_right_quad_cell_parB.rds")}
+if (fs::file_exists(analysis_folder/"bad_pop.rds")) {
+bad_pop <- readRDS(analysis_folder / "bad_pop.rds")}
+
+
+corrected_count <- read_csv("C:/Users/distant/Downloads/corrected_foci-data.csv") |> 
+  select(id, corrected_count)
+
+meshes |> 
+  filter(!id %in% c(bad_big_cell_parB, bad_high_focis_cell_parB, bad_low_focis_cell_parB, bad_small_cell_parB, bad_bot_right_quad_cell_parB)) |>
+  inner_join(popping_frames, by = "id") |>
+  inner_join(focis_inside_count, by = "id") |>
+  left_join(corrected_count, by = "id") |>
+  mutate(
+    strain = condition,
+    condition = case_when(
+      condition == "WT_906" ~ "WT",
+      condition == "William_906" ~ "William",
+      TRUE ~ condition),
+    is_bad_pop = if_else(id %in% bad_pop, TRUE, FALSE)) |>
+  ungroup() |> 
+  as_tibble() |>
+  filter(
+    frame > 1,
+    time <= popping_time) |>
+  group_by(id, condition) |>
+  mutate(
+    has_early_focis = any(frame %in% 2:3 & n_foci >= 1),
+    perc_time_low_focis_number = sum(n_foci %in% 0:1) / n()) |>
+  filter(
+    !has_early_focis,
+    perc_time_low_focis_number <= 0.9) |>
+  group_by(id, condition, replicate, bdelloplast_area, popping_time) |>
+  mutate(
+    popping_time = if_else(is.na(corrected_count), popping_time, NA_integer_)) |>
+  summarize(
+    max_foci = if_else(any(is.na(corrected_count)), max(n_foci), unique(as.integer(corrected_count))),
+    relative_progenies_per_area = unique(max_foci/bdelloplast_area),
+    start_of_first_replication = find_min(time, n_foci >= 1),
+    start_of_last_replication =  if_else(any(n_foci == max_foci), find_min(time, n_foci == max_foci), NA_real_)
+    ) |> 
+  ungroup() |>
+  mutate(
+    start_of_last_replication = if_else(is.infinite(start_of_last_replication), NA_real_, start_of_last_replication),
+    condition = fct_relevel(condition, condition_order),
+    log_bdelloplast_area = log(bdelloplast_area),
+    bin_prey_area = santoku::chop_equally(bdelloplast_area, n_bins),
+    replication_time = start_of_last_replication - start_of_first_replication,
+    difference_popping_time_last_replication = popping_time - start_of_last_replicatio,
+    media = "LB") -> ParB_LB
+
+
+
+bind_rows(ParB_LB, ParB_M9) -> ParB_all_media
+```
+
+## Descriptive statistics (Summarized data)
+
+Compute the descriptive statistics (mean, SD, CV, median, mad, rCV) of the data across everything, condition, bins of the prey area, number of foci
+
+-   Data \|\> group() \|\> summarize() -\> *uniform way of naming with data name and group* (for plotting the statistics)
+
+*uniform way of naming with data name and group \|\>* pivot_longer() -\> show & save (for easier reading)
+
+### Across media
+
+```{r}
+# TODO make sure everything interesting is summarized
+# TODO add sgr to the summary 
+TdTomato_all_media |>
+  group_by(id) |> slice_head(n = 1) |> 
+  group_by(media) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        end_of_growth_time,
+        start_size,
+        central_size,
+        end_size,
+        difference_popping_point_end_of_growth_min,
+        specific_growth_rate_h
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> TdTomato_all_media_over_media
+
+
+TdTomato_all_media |>
+  pivot_longer(
+    cols = -c(n, media),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+
+ParB_all_media |>
+  group_by(id) |> slice_head(n = 1) |> ungroup() |>
+  group_by(media) |>
+  summarise(
+    n = n(),
+    across(
+      c(popping_time,
+        max_foci,
+        relative_progenies_per_area,
+        start_of_first_replication,
+        start_of_last_replication,
+        replication_time,
+        difference_popping_time_last_replication
+      ),
+      summarise_fcts,
+      .names = "{.col}_{.fn}")) -> ParB_all_media_over_media
+
+
+ParB_all_media_over_media |>
+  pivot_longer(
+    cols = -c(n, media),
+    names_to = c("variable", ".value"),
+    names_pattern = "(\\w+)_(\\w+)")
+
+```
+
+### Saving
+
+```{r}
+# TODO do a loop or a purrr::walk
+TdTomato_LB_over_all |> write_csv(file = analysis_folder / "TdTomato_LB_over_all.csv")
+```
+
+## Data plotting
+
+### Popping point
+
+```{r}
+# TODO Make sure overall plots parts are rougthly in the same order
+# Should we add someting like a pch over replicates or another plot with color = replicate ?
+# Maybe we should make a list like that (plot_name = plot) maybe nested (not sure) so we can loop / purrr::walk to save
+
+# Popping time/prey area scatter plot
+TdTomato_all_media |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = popping_time,
+    color = media)) +
+  geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,700)
+
+# Popping time/ln(prey area) scatter plot
+TdTomato_all_media |>
+  ggplot(aes(
+    x = log_bdelloplast_area,
+    y = popping_time)) +
+  geom_point(aes(
+    color = media)) + 
+  geom_smooth(
+    method = "lm",
+    color = "black") + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+# Popping time across conditions
+TdTomato_all_media |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = media,
+    y = popping_time,
+    color = media)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = popping_time_median ,
+    ymin = popping_time_median - popping_time_mad,
+    ymax = popping_time_median + popping_time_mad,
+    group = media),
+    color = "black",
+    data = TdTomato_all_media_over_media)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) + 
+  ylim(0,600)
+
+```
+
+### Specific growth rate
+
+```{r}
+TdTomato_all_media |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = sgr_h)) + 
+  geom_point(aes(
+    color = media)) +
+  ylim(0,100) +
+  theme_classic() + 
+  theme(aspect.ratio=1)
+
+TdTomato_all_media |>
+  ggplot(aes(
+    x = media,
+    y = sgr_h)) + 
+  ggbeeswarm::geom_quasirandom(aes(color = media)) +
+  geom_pointrange(aes(
+    y = sgr_h_median,
+    ymin = sgr_h_median - sgr_h_mad,
+    ymax = sgr_h_median + sgr_h_mad),
+    color = "black",
+    data = TdTomato_all_media_over_media) +
+  ylim(0,100) + theme_classic() + theme(aspect.ratio=1)
+
+
+```
+
+### Number of offspring
+
+```{r}
+ParB_all_media |>
+  ggplot(aes(
+    x = bdelloplast_area,
+    y = max_foci,
+    color = media)) +
+  geom_point() + 
+  theme_classic() + 
+  theme(aspect.ratio=1)
+```
+
+### Number of offspring/area
+
+```{r}
+ParB_all_media |>
+  group_by(id) |> slice_head(n = 1) |>
+  ggplot(aes(
+    x = media,
+    y = relative_progenies_per_area,
+    color = condition)) +
+  ggbeeswarm::geom_quasirandom() +
+  geom_pointrange(aes(
+    y = relative_progenies_per_area_median ,
+    ymin = relative_progenies_per_area_median - relative_progenies_per_area_mad,
+    ymax = relative_progenies_per_area_median + relative_progenies_per_area_mad,
+    group = media),
+    color = "black",
+    data = ParB_all_media_over_media)+ 
+  theme_classic() + 
+  theme(aspect.ratio=1) 
+```
+
