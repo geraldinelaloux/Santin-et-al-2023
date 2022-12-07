@@ -10,13 +10,13 @@ This pipeline has the following dependencies: *yaml, here, furrr, runner, sf, ti
 
 # Global settings: locate the parameter file.
 
-Change the path to *setting_file* to locate your 'setting.yml'.
+Change the path to *setting_file* to locate your 'parameters.yml'.
 
 ```{r}
 here::i_am("Pipeline/Pipeline_final.Rmd")
 library(here)
 here()
-setting_file <- "E:/Yoann/M9_ParB/setting.yml"
+setting_file <- "E:/Yoann/M9_ParB/parameters.yml"
 ```
 
 
