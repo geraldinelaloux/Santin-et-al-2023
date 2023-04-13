@@ -1,6 +1,6 @@
 # Prey Size Analysis
 
-This depository contains the code & datasets used in **Santin *et. al*,  Modulation of prey size reveals adaptability and robustness in the cell cycle of an intracellular predator., 2022**. In this work, time lapse microscopy was used to monitor the *Bdellovibrio* cell cycle at the single cell level. The depository can be divided in two parts: the *analysis pipeline* used to obtain the data, and the *experiments*, where the datasets from different experiments are gathered. The experiments folder also contains the scripts used for the visualization of each dataset.
+This depository contains the code & datasets used in **Santin *et. al*,  Modulation of prey size reveals adaptability and robustness in the cell cycle of an intracellular predator., 2023**. In this work, time lapse microscopy was used to monitor the *Bdellovibrio* cell cycle at the single cell level. The depository can be divided in two parts: the *analysis pipeline* used to obtain the data, and the *experiments*, where the datasets from different experiments are gathered. The experiments folder also contains the scripts used for the visualization of each dataset.
 
 ## Pipeline
 
@@ -84,5 +84,5 @@ This pipeline is created & maintained by [Thomas Lamot](https://github.com/giato
 
 # Cite
 
-Y.G. Santin, T. Lamot, J. Kaljevic, R. van Raaphorst, G. Laloux (2022),  Modulation of prey size reveals adaptability and robustness in the cell cycle of an intracellular predator., *in submission*
+Y.G. Santin, T. Lamot, R. van Raaphorst, J. Kaljevic, G. Laloux (2023),  Modulation of prey size reveals adaptability and robustness in the cell cycle of an intracellular predator. *doi to be added*
 
